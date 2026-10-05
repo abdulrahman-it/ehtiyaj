@@ -1,0 +1,12 @@
+EHTIYAJ DEPLOYMENT CHECKLIST
+
+1. Create a new MySQL database on the hosting panel.
+2. Import the separate ehtiyaj-database.sql file through phpMyAdmin.
+3. Set DB_HOST, DB_NAME, DB_USER and DB_PASS as hosting environment variables if supported.
+4. If environment variables are not supported, edit config/config.php and replace all CHANGE_ME values.
+5. Ensure PHP 8.2+ with PDO MySQL, fileinfo, mbstring and sessions enabled.
+6. Ensure uploads/requests and uploads/messages are writable by PHP.
+7. Keep HTTPS enabled and test .htaccess protections.
+8. Register the first account, then promote it to admin in phpMyAdmin:
+   UPDATE users SET role='admin' WHERE email='YOUR_EMAIL';
+9. Delete DEPLOYMENT_CONFIG.txt after setup if the host serves text files publicly.

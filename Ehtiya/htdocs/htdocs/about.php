@@ -1,0 +1,4 @@
+<?php
+/** Public, server-rendered explanation of the student-help workflow. */
+require __DIR__.'/includes/bootstrap.php';
+header_ui('عن احتياج');?><div class="card p-4 p-md-5"><span class="pill align-self-start">عن المنصة</span><h1 class="mt-3">احتياج مساحة للتعاون الطلابي</h1><p class="lead">منصة ويب طلابية مجانية تربط من يحتاج دعمًا تعليميًا أو تقنيًا بمن يستطيع تقديمه.</p><p>يمكن للطلاب نشر طلباتهم وتقديم عروض المساعدة، ثم التواصل بعد قبول العرض عبر محادثة خاصة بين الطرفين. لا تتضمن المنصة أي مدفوعات أو عمليات تجارية.</p><h5 class="mt-3">كيف تعمل؟</h5><ol><li>أنشئ حسابًا وحدد تخصصك الدراسي.</li><li>انشر طلب مساعدة أو تصفح الطلبات المتاحة.</li><li>قدّم عرضًا أو اختر المساعدة المناسبة، ثم تابعوا عبر المحادثة.</li></ol><a class="btn btn-primary align-self-start" href="<?=BASE_URL?>/auth/register.php">إنشاء حساب طالب</a></div><?php footer_ui();?>

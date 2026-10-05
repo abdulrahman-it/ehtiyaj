@@ -1,0 +1,26 @@
+[
+    {
+        "name": "إدارة الأعمال",
+        "active": true
+    },
+    {
+        "name": "تقنية المعلومات",
+        "active": true
+    },
+    {
+        "name": "علوم الحاسوب",
+        "active": true
+    },
+    {
+        "name": "نظم المعلومات",
+        "active": true
+    },
+    {
+        "name": "هندسة الحاسوب",
+        "active": true
+    },
+    {
+        "name": "مالية",
+        "active": true
+    }
+]
