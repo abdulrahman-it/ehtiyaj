@@ -5,3 +5,5 @@
 **/*.log
 **/*.bak
 **/*.backup
+**/__pycache__/
+**/*.py[cod]

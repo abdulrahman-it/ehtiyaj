@@ -1,5 +1,7 @@
 EHTIYAJ SECURE DEPLOYMENT CHECKLIST (NO PRODUCTION DATA INCLUDED)
 
+Repository layout: Ehtiya/htdocs is the single application source; the actual live document root has not been verified. The GitHub deployment job is deliberately disabled until a separate approved change. Its upload-only manifest excludes uploads/ including uploads/.htaccess, database/, and config/config.php to protect the hosting copy. Before any approved deployment, resolve and test database configuration and independently install/verify protection for uploads; do not assume the manifest deploys that protection. The manifest DOES overwrite listed files, including config/majors.json and root/config/includes .htaccess. Review these against the live versions first. See REPOSITORY_REORGANIZATION_REPORT.md outside the web root.
+
 1. Do not import database/users.sql into an existing production database. It is an incomplete, users-only schema and contains no account data.
 2. Before deployment, back up existing hosting files, uploads, and database separately using the hosting provider's tools. Never store the backup under the web root or in Git.
 3. Rotate the previously exposed database credential and configure a least-privilege database account. Do not add the new credential to the repository.
