@@ -314,3 +314,8 @@ document.querySelectorAll('.table-responsive table').forEach(table => {
     window.addEventListener('pagehide', closeAll);
     window.addEventListener('pageshow', closeAll);
 })();
+
+// Mark displayed conversation as read via a CSRF-protected POST; GET remains read-only.
+document.querySelectorAll('form[data-read-receipt]').forEach(form => {
+    fetch(window.location.href, {method: 'POST', credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}, body: new FormData(form)}).catch(() => {});
+});

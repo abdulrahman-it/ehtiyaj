@@ -45,15 +45,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             // Store only the password hash, then regenerate the session ID before signing the new user in.
             $statement = $pdo->prepare('INSERT INTO users(full_name, email, password_hash, phone, major) VALUES (?, ?, ?, ?, ?)');
+            $passwordHash = password_hash($password, PASSWORD_DEFAULT);
             $statement->execute([
                 $values['full_name'],
                 $values['email'],
-                password_hash($password, PASSWORD_DEFAULT),
+                $passwordHash,
                 $values['phone'] !== '' ? $values['phone'] : null,
                 $values['major'],
             ]);
             session_regenerate_id(true);
             $_SESSION['uid'] = $pdo->lastInsertId();
+            $_SESSION['password_fingerprint'] = hash('sha256', $passwordHash);
+            $_SESSION['auth_role'] = 'student';
+            $_SESSION['last_activity'] = time();
             go('/student/index.php');
         } catch (PDOException $exception) {
             $driverCode = (int)($exception->errorInfo[1] ?? 0);

@@ -1,12 +1,12 @@
-EHTIYAJ DEPLOYMENT CHECKLIST
+EHTIYAJ SECURE DEPLOYMENT CHECKLIST (NO PRODUCTION DATA INCLUDED)
 
-1. Create a new MySQL database on the hosting panel.
-2. Import the separate ehtiyaj-database.sql file through phpMyAdmin.
-3. Set DB_HOST, DB_NAME, DB_USER and DB_PASS as hosting environment variables if supported.
-4. If environment variables are not supported, edit config/config.php and replace all CHANGE_ME values.
-5. Ensure PHP 8.2+ with PDO MySQL, fileinfo, mbstring and sessions enabled.
-6. Ensure uploads/requests and uploads/messages are writable by PHP.
-7. Keep HTTPS enabled and test .htaccess protections.
-8. Register the first account, then promote it to admin in phpMyAdmin:
-   UPDATE users SET role='admin' WHERE email='YOUR_EMAIL';
-9. Delete DEPLOYMENT_CONFIG.txt after setup if the host serves text files publicly.
+1. Do not import database/users.sql into an existing production database. It is an incomplete, users-only schema and contains no account data.
+2. Before deployment, back up existing hosting files, uploads, and database separately using the hosting provider's tools. Never store the backup under the web root or in Git.
+3. Rotate the previously exposed database credential and configure a least-privilege database account. Do not add the new credential to the repository.
+4. Set DB_HOST, DB_NAME, DB_USER and DB_PASS as server environment variables if supported. Otherwise, put a private PHP configuration file outside DOCUMENT_ROOT, in a directory not accessible via HTTP. It must return an array containing those four string keys. By default the application looks for ehtiyaj-private.php in the parent of DOCUMENT_ROOT; alternatively point EHTIYAJ_PRIVATE_CONFIG to an absolute external path. Restrict filesystem access to the PHP account. If neither is possible, do not deploy until the host supplies an equivalent secret mechanism.
+5. Ensure PHP 8.2+ with PDO MySQL, fileinfo, mbstring and sessions. Existing sessions without a password fingerprint must sign in again; suspended accounts cannot sign in.
+6. Keep uploads/requests and uploads/messages writable by PHP. Do not overwrite or delete existing uploads during deployment. Deploy the included .htaccess files and verify the host honors them: direct uploads and private configuration files must return 403/404, while authorized PHP image endpoints continue to work.
+7. Confirm HTTPS and cookies; do not enable HSTS until all domains and subdomains covered by the intended policy have verified HTTPS. Verify the CSP against current CDN resources and upload previews before enabling production traffic.
+8. Test registration, login, password change, session expiry, message read receipts, CSRF and role permissions on a separate database and accounts. Verify email delivery before implementing email verification or recovery.
+9. The actual hosting document root and supported Apache directives remain to be verified. Test this checklist on staging first. If .htaccess is not honored, enforce equivalent rules in the hosting control panel or do not expose private files.
+10. If staging fails, restore the backed-up application files and original hosting configuration while keeping private credentials out of the web root. Review logs privately. Do not import or delete production data as part of rollback.

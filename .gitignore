@@ -1,0 +1,7 @@
+# Never commit deployment secrets, operational logs or backups.
+**/ehtiyaj-private.php
+**/.env
+**/.env.*
+**/*.log
+**/*.bak
+**/*.backup

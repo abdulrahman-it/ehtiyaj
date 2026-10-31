@@ -36,11 +36,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $hash = is_array($user) ? (string)$user['password_hash'] : '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi.';
         $passwordMatches = strlen($password) <= 4096 && password_verify($password, $hash);
 
-        if ($user && $user['status'] !== 'deactivated' && $passwordMatches) {
+        if ($user && $user['status'] === 'active' && $passwordMatches) {
             session_regenerate_id(true);
             $_SESSION['uid'] = $user['id'];
+            $_SESSION['password_fingerprint'] = hash('sha256', (string)$user['password_hash']);
+            $_SESSION['auth_role'] = $user['role'];
+            $_SESSION['last_activity'] = time();
             login_throttle_state($pairKey, 10, 900, 'reset');
-            login_throttle_state($ipKey, 60, 900, 'reset');
             login_throttle_cleanup();
             go($user['role'] === 'admin' ? '/admin/index.php' : '/student/index.php');
         }

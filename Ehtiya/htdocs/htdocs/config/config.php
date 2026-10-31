@@ -1,25 +1,39 @@
 <?php
 
-/**
- * Production configuration.
- * Prefer environment variables on the hosting server. If the host does not
- * support them, replace the four CHANGE_ME values below before uploading.
- */
-function ehtiyaj_env(string $key, string $fallback = ''): string
-{
-    $value = getenv($key);
-    return $value === false ? $fallback : trim((string) $value);
+// Credentials come from the host environment or an external private PHP file returning an array.
+// Never commit real credentials. The private file must resolve outside DOCUMENT_ROOT.
+$settings = [];
+$privatePath = getenv('EHTIYAJ_PRIVATE_CONFIG');
+if ((!is_string($privatePath) || $privatePath === '') && !empty($_SERVER['DOCUMENT_ROOT'])) {
+    $defaultPrivate = dirname((string)$_SERVER['DOCUMENT_ROOT']) . '/ehtiyaj-private.php';
+    $privatePath = is_file($defaultPrivate) ? $defaultPrivate : '';
 }
-
-define('DB_HOST', ehtiyaj_env('DB_HOST', 'CHANGE_ME_DB_HOST'));
-define('DB_NAME', ehtiyaj_env('DB_NAME', 'CHANGE_ME_DB_NAME'));
-define('DB_USER', ehtiyaj_env('DB_USER', 'CHANGE_ME_DB_USER'));
-define('DB_PASS', ehtiyaj_env('DB_PASS', 'CHANGE_ME_DB_PASSWORD'));
-
-if (DB_HOST === 'CHANGE_ME_DB_HOST' || DB_NAME === 'CHANGE_ME_DB_NAME'
-    || DB_USER === 'CHANGE_ME_DB_USER' || DB_PASS === 'CHANGE_ME_DB_PASSWORD') {
-    error_log('[Ehtiyaj] Production database credentials are not configured.');
+if (is_string($privatePath) && $privatePath !== '') {
+    $resolvedPrivate = realpath($privatePath);
+    $resolvedDocument = realpath($_SERVER['DOCUMENT_ROOT'] ?? '') ?: '';
+    if (!$resolvedPrivate || !$resolvedDocument || !is_file($resolvedPrivate)
+        || $resolvedPrivate === $resolvedDocument
+        || str_starts_with($resolvedPrivate, rtrim($resolvedDocument, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR)) {
+        error_log('[Ehtiyaj] Invalid private configuration location.');
+        http_response_code(500);
+        exit('تعذر الاتصال بالخدمة حاليًا. حاول مرة أخرى لاحقًا.');
+    }
+    $loadedSettings = require $resolvedPrivate;
+    if (is_array($loadedSettings)) {
+        $settings = $loadedSettings;
+    }
 }
+foreach (['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASS'] as $key) {
+    $environmentValue = getenv($key);
+    $value = $environmentValue !== false ? $environmentValue : ($settings[$key] ?? null);
+    if (!is_string($value) || ($key !== 'DB_PASS' && trim($value) === '')) {
+        error_log('[Ehtiyaj] Database configuration is incomplete.');
+        http_response_code(500);
+        exit('تعذر الاتصال بالخدمة حاليًا. حاول مرة أخرى لاحقًا.');
+    }
+    define($key, $value);
+}
+unset($settings, $loadedSettings, $value, $environmentValue, $key);
 
 $projectRoot = realpath(__DIR__ . '/..');
 $documentRoot = realpath($_SERVER['DOCUMENT_ROOT'] ?? '') ?: '';

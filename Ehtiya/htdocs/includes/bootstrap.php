@@ -3,9 +3,6 @@
  * Application bootstrap and shared view helpers.
  * Keep authentication, request safety and layout primitives centralized here.
  */
-require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/majors.php';
-
 ini_set('display_errors', '0');
 ini_set('display_startup_errors', '0');
 ini_set('log_errors', '1');
@@ -19,6 +16,16 @@ set_exception_handler(static function (Throwable $exception): void {
     echo 'حدث خطأ غير متوقع. حاول مرة أخرى لاحقًا.';
     exit;
 });
+
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/majors.php';
+
+// Conservative policy for the current Bootstrap, icon, font and inline UI assets.
+header('X-Content-Type-Options: nosniff');
+header('Referrer-Policy: strict-origin-when-cross-origin');
+header('X-Frame-Options: SAMEORIGIN');
+header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'");
 
 $httpsOn = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== '' && strtolower((string)$_SERVER['HTTPS']) !== 'off')
     || (string)(getenv('APP_HTTPS') ?: '') === '1';
@@ -62,6 +69,16 @@ session_set_cookie_params([
 ]);
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
+}
+// Limit authenticated sessions after inactivity, without trusting client timestamps.
+if (!empty($_SESSION['uid'])) {
+    $lastActivity = $_SESSION['last_activity'] ?? null;
+    if (!is_int($lastActivity) || $lastActivity > time() || time() - $lastActivity > 1800) {
+        $_SESSION = [];
+        session_regenerate_id(true);
+    } else {
+        $_SESSION['last_activity'] = time();
+    }
 }
 
 try {
@@ -174,7 +191,7 @@ function check_csrf(): void
     $sessionToken = $_SESSION['csrf'] ?? '';
     $postedToken = $_POST['csrf'] ?? null;
     if ($_SERVER['REQUEST_METHOD'] === 'POST'
-        && (!is_string($sessionToken) || !is_string($postedToken) || !hash_equals($sessionToken, $postedToken))) {
+        && (!is_string($sessionToken) || $sessionToken === '' || !is_string($postedToken) || !hash_equals($sessionToken, $postedToken))) {
         http_response_code(419);
         exit('انتهت صلاحية النموذج. أعد تحميل الصفحة.');
     }
@@ -251,13 +268,20 @@ function me(): ?array
         return null;
     }
 
-    $statement = $pdo->prepare('SELECT id,full_name,email,phone,major,role,status,email_visibility,phone_visibility,created_at FROM users WHERE id = ?');
+    $statement = $pdo->prepare('SELECT id,full_name,email,phone,major,role,status,email_visibility,phone_visibility,created_at,password_hash FROM users WHERE id = ?');
     $statement->execute([$_SESSION['uid']]);
     $user = $statement->fetch();
-    if (!$user || $user['status'] === 'deactivated') {
-        unset($_SESSION['uid']);
+    $fingerprint = $_SESSION['password_fingerprint'] ?? null;
+    if (!$user || $user['status'] !== 'active' || !is_string($fingerprint)
+        || !hash_equals(hash('sha256', (string)$user['password_hash']), $fingerprint)) {
+        unset($_SESSION['uid'], $_SESSION['password_fingerprint'], $_SESSION['auth_role'], $_SESSION['last_activity']);
         return null;
     }
+    if (($_SESSION['auth_role'] ?? null) !== $user['role']) {
+        session_regenerate_id(true);
+        $_SESSION['auth_role'] = $user['role'];
+    }
+    unset($user['password_hash']);
     return $user;
 }
 
