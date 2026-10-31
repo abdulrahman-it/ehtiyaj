@@ -46,6 +46,21 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(sum(call[0] == 'stor' for call in ftp.calls), len(files))
         self.assertTrue(all(call[0] in {'cwd', 'mkd', 'stor'} for call in ftp.calls))
 
+    def test_existing_sensitive_files_are_rejected_anywhere(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'root'
+            root.mkdir()
+            manifest = Path(temp) / 'manifest'
+            for name in ('.env', 'assets/site.env', 'assets/backup.sql', 'assets/keys.pem',
+                         'assets/ehtiyaj-private.php', 'assets/credentials.php',
+                         'CONFIG/config.php', 'nested/config/majors.json', 'assets/.htaccess'):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('synthetic fixture', encoding='utf-8')
+                manifest.write_text(name + '\n', encoding='utf-8')
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    module.read_manifest(root, manifest)
+
     def test_forbidden_paths_and_symlinks(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / 'root'

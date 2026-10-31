@@ -10,6 +10,8 @@ from pathlib import Path, PurePosixPath
 FORBIDDEN_PARTS = {'uploads', 'database', '.git', '.github', 'tests', 'htdocs'}
 # Preserve the host's existing connection file until a reviewed secret strategy is deployed.
 CONFIG_ALLOWED = {'config/.htaccess', 'config/majors.json'}
+HTACCESS_ALLOWED = {'.htaccess', 'config/.htaccess', 'includes/.htaccess'}
+SENSITIVE_SUFFIXES = {'.sql', '.ini', '.env', '.log', '.bak', '.backup', '.old', '.orig', '.swp', '.pem', '.key', '.p12', '.pfx', '.sqlite', '.db'}
 
 
 def read_manifest(root: Path, manifest: Path):
@@ -25,8 +27,14 @@ def read_manifest(root: Path, manifest: Path):
                 or any(p.lower() in FORBIDDEN_PARTS for p in path.parts)
                 or '\\' in name or '\r' in name or '\n' in name):
             raise ValueError('Unsafe manifest path')
-        if path.parts[0] == 'config' and name not in CONFIG_ALLOWED:
-            raise ValueError('Private configuration cannot be deployed')
+        lowered_parts = tuple(part.casefold() for part in path.parts)
+        basename = lowered_parts[-1]
+        if ('config' in lowered_parts and name not in CONFIG_ALLOWED
+                or (any(part.startswith('.') for part in path.parts) and name not in HTACCESS_ALLOWED)
+                or basename == 'config.php'
+                or any(term in basename for term in ('secret', 'credential', 'password', 'private'))
+                or path.suffix.casefold() in SENSITIVE_SUFFIXES):
+            raise ValueError('Private configuration or sensitive file cannot be deployed')
         if name in seen:
             raise ValueError('Duplicate manifest path')
         seen.add(name)
