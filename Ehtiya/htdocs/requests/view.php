@@ -45,16 +45,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }if (input_string('action') === 'reject' && $mine) {
-        $oid = input_int('offer_id');
-        $z = $pdo->prepare("UPDATE offers SET status='rejected' WHERE id=? AND request_id=? AND status='submitted' AND EXISTS (SELECT 1 FROM requests WHERE requests.id=offers.request_id AND requests.owner_id=? AND requests.status='receiving_offers' AND requests.moderation_status='published') AND EXISTS (SELECT 1 FROM users WHERE users.id=? AND users.role='student' AND users.status='active')");
-        $z->execute([$oid,$id,me()['id'],me()['id']]);
-        if ($z->rowCount()) {
-            $h = $pdo->prepare('SELECT student_id FROM offers WHERE id=?');
-            $h->execute([$oid]);
-            $helper = $h->fetchColumn();
-            if ($helper) {
-                notify($helper, 'offer_rejected', 'لم يتم قبول العرض', 'لم يتم اختيار عرضك لهذا الطلب.', '/offers/my.php');
-            }flash('تم تحديث العرض.');
+        try {
+            $pdo->beginTransaction();
+            $oid = input_int('offer_id');
+            $z = $pdo->prepare("UPDATE offers SET status='rejected' WHERE id=? AND request_id=? AND status='submitted' AND EXISTS (SELECT 1 FROM requests WHERE requests.id=offers.request_id AND requests.owner_id=? AND requests.status='receiving_offers' AND requests.moderation_status='published') AND EXISTS (SELECT 1 FROM users WHERE users.id=? AND users.role='student' AND users.status='active')");
+            $z->execute([$oid,$id,me()['id'],me()['id']]);
+            if ($z->rowCount()) {
+                $h = $pdo->prepare('SELECT student_id FROM offers WHERE id=?');
+                $h->execute([$oid]);
+                $helper = $h->fetchColumn();
+                if ($helper) {
+                    notify($helper, 'offer_rejected', 'لم يتم قبول العرض', 'لم يتم اختيار عرضك لهذا الطلب.', '/offers/my.php');
+                }flash('تم تحديث العرض.');
+            }
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            error_log('[Ehtiyaj] Offer rejection failed: ' . $exception->getMessage());
+            flash('تعذر تحديث العرض. لم تُحفظ العملية.', 'danger');
         }
     }
     // Accept selected submitted offers atomically; each accepted offer receives a linked conversation and notice.

@@ -27,6 +27,11 @@ function save_image($file, $folder)
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $mime = $finfo->file($tmpName);
     $ext = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'][$mime] ?? null;
+    // Reject embedded executable extensions and path separators even with a valid image suffix.
+    if (strpbrk($clientName, '/\\') !== false
+        || preg_match('/\.(?:php[0-9]*|phtml|phar|cgi|pl|py|sh|js|html?|svg)(?:\.|$)/i', $clientName)) {
+        throw new RuntimeException('اسم الصورة غير صالح.');
+    }
     $clientExtension = strtolower(pathinfo($clientName, PATHINFO_EXTENSION));
     $extensionMime = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'];
     if (!$ext || !isset($extensionMime[$clientExtension]) || $extensionMime[$clientExtension] !== $mime

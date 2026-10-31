@@ -1,6 +1,7 @@
 <?php
 /** Student-owned profile and password forms, with writes limited to active accounts. */
 require __DIR__.'/../includes/bootstrap.php';
+require __DIR__.'/../includes/login_throttle.php';
 need_role('student');
 // Dispatch only the existing profile/password actions and preserve their current form contracts.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -23,8 +24,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!password_policy_valid($pw) || $pw !== input_string('confirm')) {
             flash('استخدم كلمة مرور من 8 أحرف على الأقل (حتى 64 بايتًا) وتأكد من تطابقها.', 'danger');
         } else {
-            $pdo->prepare("UPDATE users SET password_hash=? WHERE id=? AND status='active'")->execute([password_hash($pw, PASSWORD_DEFAULT),me()['id']]);
-            flash('تم تغيير كلمة المرور.');
+            $userId = (int)me()['id'];
+            $attemptKey = 'password-change|' . $userId;
+            if (login_throttle_state($attemptKey, 10, 900) > 0) {
+                flash('تعذر تغيير كلمة المرور. حاول لاحقًا.', 'danger');
+            } else {
+                $lookup = $pdo->prepare("SELECT password_hash FROM users WHERE id=? AND role='student' AND status='active'");
+                $lookup->execute([$userId]);
+                $oldHash = $lookup->fetchColumn();
+                $currentPassword = input_string('current_password');
+                if (!is_string($oldHash) || strlen($currentPassword) > 4096 || !password_verify($currentPassword, $oldHash)) {
+                    login_throttle_state($attemptKey, 10, 900, 'record');
+                    flash('تعذر تغيير كلمة المرور. تحقق من كلمة المرور الحالية.', 'danger');
+                } else {
+                    $newHash = password_hash($pw, PASSWORD_DEFAULT);
+                    $change = $pdo->prepare("UPDATE users SET password_hash=? WHERE id=? AND role='student' AND status='active' AND BINARY password_hash=BINARY ?");
+                    $change->execute([$newHash, $userId, $oldHash]);
+                    if ($change->rowCount() === 1) {
+                        login_throttle_state($attemptKey, 10, 900, 'reset');
+                        session_regenerate_id(true);
+                        $_SESSION['password_fingerprint'] = hash('sha256', $newHash);
+                        $_SESSION['last_activity'] = time();
+                        flash('تم تغيير كلمة المرور وتسجيل خروج الجلسات الأخرى.');
+                    } else {
+                        flash('تغيرت بيانات الحساب. أعد تسجيل الدخول ثم حاول مرة أخرى.', 'danger');
+                    }
+                }
+            }
         }
     }go('/student/profile.php');
 }$u = me();
@@ -44,7 +70,7 @@ header_ui('الملف الشخصي');?>
   </div></section><div class="profile-form-actions"><button class="btn btn-primary" type="submit"><i class="bi bi-check2"></i> حفظ التغييرات</button></div></fieldset></form>
  </section>
  <aside class="profile-password-section"><span class="profile-lock-icon"><i class="bi bi-shield-lock"></i></span><h2>تغيير كلمة المرور</h2><p>اختر كلمة مرور جديدة من 8 أحرف على الأقل، ولا تشاركها مع الآخرين.</p>
-  <form method="post"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="password"><fieldset class="profile-fields" <?=$u['status'] !== 'active' ? 'disabled' : ''?>><div class="profile-password-field"><label class="form-label" for="profile-password">كلمة المرور الجديدة</label><div class="password-wrap mb-2"><input id="profile-password" type="password" name="password" class="form-control" autocomplete="new-password" minlength="8" maxlength="64" placeholder="8 أحرف على الأقل" required><button class="password-toggle" type="button" data-password-target="profile-password" aria-label="إظهار كلمة المرور"><i class="bi bi-eye"></i></button></div></div><div class="profile-password-field"><label class="form-label" for="profile-password-confirm">تأكيد كلمة المرور</label><div class="password-wrap mb-3"><input id="profile-password-confirm" type="password" name="confirm" class="form-control" data-match="#profile-password" minlength="8" maxlength="64" placeholder="أعد كتابة كلمة المرور" required><button class="password-toggle" type="button" data-password-target="profile-password-confirm" aria-label="إظهار تأكيد كلمة المرور"><i class="bi bi-eye"></i></button></div></div><button class="btn btn-outline-primary" type="submit">تحديث كلمة المرور</button></fieldset></form>
+  <form method="post"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="password"><fieldset class="profile-fields" <?=$u['status'] !== 'active' ? 'disabled' : ''?>><div class="profile-password-field"><label class="form-label" for="profile-current-password">كلمة المرور الحالية</label><input id="profile-current-password" type="password" name="current_password" class="form-control mb-2" autocomplete="current-password" required></div><div class="profile-password-field"><label class="form-label" for="profile-password">كلمة المرور الجديدة</label><div class="password-wrap mb-2"><input id="profile-password" type="password" name="password" class="form-control" autocomplete="new-password" minlength="8" maxlength="64" placeholder="8 أحرف على الأقل" required><button class="password-toggle" type="button" data-password-target="profile-password" aria-label="إظهار كلمة المرور"><i class="bi bi-eye"></i></button></div></div><div class="profile-password-field"><label class="form-label" for="profile-password-confirm">تأكيد كلمة المرور</label><div class="password-wrap mb-3"><input id="profile-password-confirm" type="password" name="confirm" class="form-control" data-match="#profile-password" minlength="8" maxlength="64" placeholder="أعد كتابة كلمة المرور" required><button class="password-toggle" type="button" data-password-target="profile-password-confirm" aria-label="إظهار تأكيد كلمة المرور"><i class="bi bi-eye"></i></button></div></div><button class="btn btn-outline-primary" type="submit">تحديث كلمة المرور</button></fieldset></form>
  </aside>
 </div>
 <?php footer_ui();?>

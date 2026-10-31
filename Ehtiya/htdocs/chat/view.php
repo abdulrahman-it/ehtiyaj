@@ -20,8 +20,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit('حجم الرسالة المرسلة يتجاوز الحد المسموح. قلل حجم الصورة وأعد المحاولة.');
     }
     post_only();
-    active_write();
     $action = input_string('action');
+    if ($action === 'mark_read') {
+        $pdo->prepare('UPDATE messages SET is_read=1 WHERE conversation_id=? AND sender_id<>?')->execute([$id, me()['id']]);
+        if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+            http_response_code(204);
+            exit;
+        }
+        go('/chat/view.php?' . http_build_query(['id' => $id] + $back['forward'], '', '&', PHP_QUERY_RFC3986));
+    }
+    active_write();
     if ($action === 'send') {
         if (!$can) {
             http_response_code(409);
@@ -96,8 +104,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }$redirectParams = ['id' => $id] + $back['forward'];
     go('/chat/view.php?' . http_build_query($redirectParams, '', '&', PHP_QUERY_RFC3986));
 }
-// مقصود وظيفيًا: فتح المحادثة يحدّث إيصالات قراءة رسائل الطرف الآخر.
-$pdo->prepare('UPDATE messages SET is_read=1 WHERE conversation_id=? AND sender_id<>?')->execute([$id,me()['id']]);
 $messageCount = $pdo->prepare('SELECT COUNT(*) FROM messages WHERE conversation_id=?');
 $messageCount->execute([$id]);
 $messagePagination = pagination_state((int)$messageCount->fetchColumn(), 20);
@@ -113,7 +119,7 @@ $o = $other->fetch();
 $contact = $pdo->prepare("SELECT COUNT(*) FROM conversations c JOIN offers f ON f.id=c.offer_id WHERE c.request_id=? AND c.status IN ('open','read_only') AND ((c.owner_id=? AND c.helper_id=?) OR (c.owner_id=? AND c.helper_id=?)) AND f.status='accepted'");
 $contact->execute([$c['request_id'],me()['id'],$c['other_id'],$c['other_id'],me()['id']]);
 $accepted = (bool)$contact->fetchColumn();
-header_ui('المحادثة');?><nav class="ux-breadcrumb" aria-label="مسار الصفحة"><a href="<?=e(app_url('student/index.php'))?>">الرئيسية</a><i class="bi bi-chevron-left" aria-hidden="true"></i><span>المحادثة: <?=e($c['title'])?></span></nav><?= page_back_link($back['url'], $back['label']) ?><section class="chat-context-card" aria-label="سياق المحادثة"><div class="chat-context-title"><span class="conversation-card-icon"><i class="bi bi-chat-square-text"></i></span><div><span class="section-kicker">محادثة حول الطلب</span><h1><?=e($c['title'])?></h1><p>مع <strong><?=e($o['full_name'])?></strong></p></div></div><div class="chat-context-status"><div><span>حالة الطلب</span><?=status_badge($c['request_status'])?></div><div><span>حالة المحادثة</span><?=status_badge($c['status'])?></div></div><a class="chat-return-request" href="<?=e(ui_context_url('requests/view.php', ['id' => (int)$c['request_id'], 'return_to' => 'chats', 'back_page' => 1, 'back_per_page' => 20]))?>"><i class="bi bi-arrow-right"></i> عرض تفاصيل الطلب المرتبط <i class="bi bi-box-arrow-up-left" aria-hidden="true"></i></a><?php if (!$can): ?><p class="chat-state-note<?= ($c['status'] === 'read_only' && $c['read_only_reason'] === 'report') ? ' chat-admin-closed' : '' ?>" role="status"><i class="bi <?= ($c['status'] === 'read_only' && $c['read_only_reason'] === 'report') ? 'bi-shield-lock' : 'bi-info-circle' ?>" aria-hidden="true"></i> <?php if ($c['status'] === 'read_only' && $c['read_only_reason'] === 'report'): ?>تم إغلاق هذه المحادثة بواسطة الإدارة، ولا يمكن إرسال رسائل جديدة.<?php elseif (me()['status'] === 'suspended'): ?>حسابك موقوف مؤقتًا؛ يمكنك قراءة المحادثة دون إرسال رسائل.<?php elseif ($c['request_status'] === 'completed'): ?>اكتملت المساعدة؛ يمكنك الرجوع إلى الرسائل السابقة فقط.<?php elseif ($c['request_status'] === 'cancelled'): ?>أُلغي الطلب؛ أصبحت هذه المحادثة للقراءة فقط.<?php else: ?>يمكنك الاطلاع على الرسائل السابقة.<?php endif; ?></p><?php endif; ?><?php if ($accepted && (($o['email_visibility'] === 'accepted_only') || ($o['phone_visibility'] === 'accepted_only'))) {?><small class="chat-contact-note mt-2"><?php if ($o['email_visibility'] === 'accepted_only') {
+header_ui('المحادثة');?><form method="post" data-read-receipt><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="mark_read"><noscript><button type="submit" class="btn btn-outline-secondary">تعليم الرسائل كمقروءة</button></noscript></form><nav class="ux-breadcrumb" aria-label="مسار الصفحة"><a href="<?=e(app_url('student/index.php'))?>">الرئيسية</a><i class="bi bi-chevron-left" aria-hidden="true"></i><span>المحادثة: <?=e($c['title'])?></span></nav><?= page_back_link($back['url'], $back['label']) ?><section class="chat-context-card" aria-label="سياق المحادثة"><div class="chat-context-title"><span class="conversation-card-icon"><i class="bi bi-chat-square-text"></i></span><div><span class="section-kicker">محادثة حول الطلب</span><h1><?=e($c['title'])?></h1><p>مع <strong><?=e($o['full_name'])?></strong></p></div></div><div class="chat-context-status"><div><span>حالة الطلب</span><?=status_badge($c['request_status'])?></div><div><span>حالة المحادثة</span><?=status_badge($c['status'])?></div></div><a class="chat-return-request" href="<?=e(ui_context_url('requests/view.php', ['id' => (int)$c['request_id'], 'return_to' => 'chats', 'back_page' => 1, 'back_per_page' => 20]))?>"><i class="bi bi-arrow-right"></i> عرض تفاصيل الطلب المرتبط <i class="bi bi-box-arrow-up-left" aria-hidden="true"></i></a><?php if (!$can): ?><p class="chat-state-note<?= ($c['status'] === 'read_only' && $c['read_only_reason'] === 'report') ? ' chat-admin-closed' : '' ?>" role="status"><i class="bi <?= ($c['status'] === 'read_only' && $c['read_only_reason'] === 'report') ? 'bi-shield-lock' : 'bi-info-circle' ?>" aria-hidden="true"></i> <?php if ($c['status'] === 'read_only' && $c['read_only_reason'] === 'report'): ?>تم إغلاق هذه المحادثة بواسطة الإدارة، ولا يمكن إرسال رسائل جديدة.<?php elseif (me()['status'] === 'suspended'): ?>حسابك موقوف مؤقتًا؛ يمكنك قراءة المحادثة دون إرسال رسائل.<?php elseif ($c['request_status'] === 'completed'): ?>اكتملت المساعدة؛ يمكنك الرجوع إلى الرسائل السابقة فقط.<?php elseif ($c['request_status'] === 'cancelled'): ?>أُلغي الطلب؛ أصبحت هذه المحادثة للقراءة فقط.<?php else: ?>يمكنك الاطلاع على الرسائل السابقة.<?php endif; ?></p><?php endif; ?><?php if ($accepted && (($o['email_visibility'] === 'accepted_only') || ($o['phone_visibility'] === 'accepted_only'))) {?><small class="chat-contact-note mt-2"><?php if ($o['email_visibility'] === 'accepted_only') {
     echo 'البريد: '.e($o['email']).' · ';
 }if ($o['phone_visibility'] === 'accepted_only') {
     echo 'الهاتف: '.e($o['phone']);
