@@ -59,14 +59,41 @@ document.querySelectorAll('[data-image-preview]').forEach(input => {
     input.addEventListener('change', render);
     render();
 });
-document.querySelectorAll('form:not([data-confirm]):not(.offer-review-form)').forEach(form => form.addEventListener('submit', () => {
-    const submit = form.querySelector('button[type=submit],button:not([type])');
-    if (submit && !submit.dataset.keepLabel) {
-        submit.dataset.keepLabel = '1';
-        submit.setAttribute('aria-busy', 'true');
-        submit.disabled = true;
-        submit.textContent = 'جارٍ الإرسال…';
+// Keep the submitter enabled so its name/value remains part of the browser's submission.
+// Track only changes made here, so restoration never enables an independently disabled control.
+const pendingForms = new Map();
+function restorePendingForm(form, state) {
+    if (pendingForms.get(form) !== state) return;
+    pendingForms.delete(form);
+    if (!state.button) return;
+    if (state.nodes) state.button.replaceChildren(...state.nodes);
+    for (const [name, value] of state.attributes) {
+        if (value === null) state.button.removeAttribute(name);
+        else state.button.setAttribute(name, value);
     }
+}
+function markFormPending(form, event, changeLabel = true) {
+    const button = event.submitter instanceof HTMLButtonElement ? event.submitter : null;
+    const state = {button, nodes: null, attributes: []};
+    if (button) {
+        state.attributes = ['aria-busy', 'aria-disabled'].map(name => [name, button.getAttribute(name)]);
+        button.setAttribute('aria-busy', 'true');
+        button.setAttribute('aria-disabled', 'true');
+        if (changeLabel && !button.dataset.keepLabel) {
+            state.nodes = [...button.childNodes];
+            button.textContent = 'جارٍ الإرسال…';
+        }
+    }
+    pendingForms.set(form, state);
+    // A later submit listener may cancel the action; don't leave a cancelled form locked.
+    queueMicrotask(() => { if (event.defaultPrevented) restorePendingForm(form, state); });
+}
+window.addEventListener('pageshow', () => {
+    for (const [form, state] of pendingForms) restorePendingForm(form, state);
+});
+document.querySelectorAll('form:not([data-confirm]):not(.offer-review-form)').forEach(form => form.addEventListener('submit', event => {
+    if (pendingForms.has(form)) { event.preventDefault(); return; }
+    if (!event.defaultPrevented) markFormPending(form, event);
 }));
 
 // Accessible mobile navigation drawer: overlay, escape key, focus return and focus containment.
@@ -131,10 +158,13 @@ document.querySelectorAll('.offer-review-form').forEach(form => {
     };
     checks.forEach(check => check.addEventListener('change', update));
     singleButtons.forEach(button => button.addEventListener('click', () => {
+        if (pendingForms.has(form)) return;
         checks.forEach(check => { check.checked = check.value === button.value; });
         update();
     }));
     form.addEventListener('submit', event => {
+        if (pendingForms.has(form)) { event.preventDefault(); return; }
+        if (event.defaultPrevented) return;
         const selected = checks.filter(check => check.checked);
         if (!selected.length && event.submitter?.dataset.acceptOffer) {
             const matching = checks.find(check => check.value === event.submitter.value);
@@ -159,10 +189,7 @@ document.querySelectorAll('.offer-review-form').forEach(form => {
                 at: Date.now(),
             }));
         } catch { /* The confirmed server response remains the source of truth if storage is unavailable. */ }
-        if (event.submitter) {
-            event.submitter.disabled = true;
-            event.submitter.setAttribute('aria-busy', 'true');
-        }
+        markFormPending(form, event, false);
     });
     update();
 });
