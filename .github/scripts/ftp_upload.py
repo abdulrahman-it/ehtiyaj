@@ -32,7 +32,8 @@ def read_manifest(root: Path, manifest: Path):
         if ('config' in lowered_parts and name not in CONFIG_ALLOWED
                 or (any(part.startswith('.') for part in path.parts) and name not in HTACCESS_ALLOWED)
                 or basename == 'config.php'
-                or any(term in basename for term in ('secret', 'credential', 'password', 'private'))
+                or any(term in part for part in lowered_parts
+                       for term in ('secret', 'credential', 'password', 'private'))
                 or path.suffix.casefold() in SENSITIVE_SUFFIXES):
             raise ValueError('Private configuration or sensitive file cannot be deployed')
         if name in seen:
