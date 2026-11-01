@@ -76,30 +76,40 @@ document.querySelectorAll('form:not([data-confirm]):not(.offer-review-form)').fo
     const scrim = document.querySelector('.mobile-menu-scrim');
     if (!toggle || !drawer || !scrim) return;
     const closeControls = drawer.querySelectorAll('[data-menu-close]');
-    const focusable = () => [...drawer.querySelectorAll('a[href],button:not([disabled])')];
+    const focusable = () => [...drawer.querySelectorAll('a[href],button:not([disabled]),summary')]
+        .filter(element => {
+            const closedDetails = element.closest('details:not([open])');
+            return !closedDetails || (element.tagName === 'SUMMARY' && element.parentElement === closedDetails);
+        });
+    let focusTimer;
 
     function openMenu() {
         document.body.classList.add('menu-open');
         toggle.setAttribute('aria-expanded', 'true');
         toggle.setAttribute('aria-label', 'إغلاق القائمة');
         drawer.setAttribute('aria-hidden', 'false');
-        window.setTimeout(() => focusable()[0]?.focus(), 60);
+        window.clearTimeout(focusTimer);
+        focusTimer = window.setTimeout(() => {
+            if (toggle.getAttribute('aria-expanded') === 'true') focusable()[0]?.focus();
+        }, 60);
     }
-    function closeMenu() {
+    function closeMenu(returnFocus = true) {
+        window.clearTimeout(focusTimer);
         document.body.classList.remove('menu-open');
         toggle.setAttribute('aria-expanded', 'false');
         toggle.setAttribute('aria-label', 'فتح القائمة');
         drawer.setAttribute('aria-hidden', 'true');
-        toggle.focus();
+        if (returnFocus) toggle.focus();
     }
     toggle.addEventListener('click', () => toggle.getAttribute('aria-expanded') === 'true' ? closeMenu() : openMenu());
-    closeControls.forEach(control => control.addEventListener('click', closeMenu));
-    scrim.addEventListener('click', closeMenu);
-    drawer.querySelectorAll('a').forEach(link => link.addEventListener('click', () => {
-        document.body.classList.remove('menu-open');
-        toggle.setAttribute('aria-expanded', 'false');
-        drawer.setAttribute('aria-hidden', 'true');
-    }));
+    closeControls.forEach(control => control.addEventListener('click', () => closeMenu()));
+    scrim.addEventListener('click', () => closeMenu());
+    drawer.querySelectorAll('a').forEach(link => link.addEventListener('click', () => closeMenu(false)));
+    window.addEventListener('pagehide', () => closeMenu(false));
+    window.addEventListener('pageshow', () => closeMenu(false));
+    window.addEventListener('resize', () => {
+        if (window.innerWidth >= 992 && toggle.getAttribute('aria-expanded') === 'true') closeMenu(false);
+    });
     document.addEventListener('keydown', event => {
         if (toggle.getAttribute('aria-expanded') !== 'true') return;
         if (event.key === 'Escape') { closeMenu(); return; }
@@ -170,7 +180,7 @@ document.querySelectorAll('.offer-review-form').forEach(form => {
     const link = document.querySelector('[data-request-chat-link]');
     if (!link) return;
     const target = new URL(link.href, window.location.href);
-    target.searchParams.set('request_id', String(flow.requestId));
+    target.searchParams.set('request_id', requestId);
     target.searchParams.set('after_accept', '1');
     flash.insertAdjacentHTML('beforeend', '<div class="accept-success-next"><i class="bi bi-chat-dots"></i> تم إنشاء المحادثة. جارٍ فتحها الآن…</div>');
     window.setTimeout(() => window.location.assign(target.href), 650);

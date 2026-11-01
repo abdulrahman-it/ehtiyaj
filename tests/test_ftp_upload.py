@@ -4,6 +4,7 @@ import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('ftp_upload', ROOT / '.github/scripts/ftp_upload.py')
@@ -45,6 +46,56 @@ class DeploymentTests(unittest.TestCase):
         module.upload(ftp, '/htdocs/', files)
         self.assertEqual(sum(call[0] == 'stor' for call in ftp.calls), len(files))
         self.assertTrue(all(call[0] in {'cwd', 'mkd', 'stor'} for call in ftp.calls))
+
+    def test_existing_sensitive_files_are_rejected_anywhere(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'root'
+            root.mkdir()
+            manifest = Path(temp) / 'manifest'
+            for name in ('.env', 'assets/site.env', 'assets/backup.sql', 'assets/keys.pem',
+                         'assets/ehtiyaj-private.php', 'assets/credentials.php',
+                         'CONFIG/config.php', 'nested/config/majors.json', 'assets/.htaccess'):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('synthetic fixture', encoding='utf-8')
+                manifest.write_text(name + '\n', encoding='utf-8')
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    module.read_manifest(root, manifest)
+
+    def test_sensitive_directory_components_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'root'
+            root.mkdir()
+            manifest = Path(temp) / 'manifest'
+            for name in ('private/db.php', 'secrets/db.php', 'credentials/db.php',
+                         'passwords/db.php', 'assets/PRIVATE/db.php',
+                         'assets/SecretStore/db.php', 'assets/api-credentials/settings.php',
+                         'private/config/majors.json'):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('synthetic fixture', encoding='utf-8')
+                manifest.write_text(name + '\n', encoding='utf-8')
+                with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'sensitive file'):
+                    module.read_manifest(root, manifest)
+
+    def test_sensitive_manifest_fails_before_ftp_connection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'root'
+            root.mkdir()
+            (root / 'public.php').write_text('public fixture', encoding='utf-8')
+            (root / 'secrets').mkdir()
+            (root / 'secrets' / 'db.php').write_text('synthetic fixture', encoding='utf-8')
+            manifest = Path(temp) / 'manifest'
+            manifest.write_text('public.php\nsecrets/db.php\n', encoding='utf-8')
+            argv = ['ftp_upload.py', '--local-dir', str(root), '--server-dir', '/htdocs/',
+                    '--manifest', str(manifest)]
+            with mock.patch.object(module.sys, 'argv', argv), \
+                 mock.patch.object(module.ftplib, 'FTP') as ftp, \
+                 mock.patch.object(module.ftplib, 'FTP_TLS') as ftps:
+                with self.assertRaisesRegex(ValueError, 'sensitive file'):
+                    module.main()
+                ftp.assert_not_called()
+                ftps.assert_not_called()
 
     def test_forbidden_paths_and_symlinks(self):
         with tempfile.TemporaryDirectory() as temp:

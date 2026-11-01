@@ -1224,6 +1224,12 @@ body > main.container { width: 100%; flex: 1 0 auto; }
     .auth-footer nav { order: 3; width: 100%; justify-content: center; gap: .5rem .9rem; }
     .auth-footer-copy { margin-inline-start: auto; }
 }
+/* Guest sign-in links remain available in the mobile drawer; keep the header within narrow screens. */
+@media (max-width: 575px) {
+    .header-actions .login-link,
+    .header-actions .signup-link { display: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .footer-help a i { transition: none; }
 }
