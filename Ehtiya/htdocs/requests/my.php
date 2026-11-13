@@ -26,14 +26,14 @@ header_ui('طلباتي');
     <section class="my-request-list" aria-label="الطلبات التي أنشأتها">
         <?php foreach ($rows as $r): ?>
             <article class="my-request-card">
-                <div class="my-request-card-top"><span class="request-identity"><i class="bi bi-journal-text" aria-hidden="true"></i> طلب مساعدة</span><span class="type-label"><i class="bi bi-bookmark"></i><?= e($r['type_name']) ?></span><span class="ux-status-caption">حالة الطلب</span><?= status_badge($r['status']) ?></div>
-                <h2><a href="<?= e(ui_context_url('requests/view.php', ['id' => (int)$r['id']] + $returnContextParams)) ?>"><?= e($r['title']) ?></a></h2>
+                <div class="my-request-card-top"><span class="request-identity"><i class="bi bi-journal-text" aria-hidden="true"></i> طلب مساعدة</span><span class="type-label"><i class="bi bi-bookmark"></i><?= e($r['type_name']) ?></span><span class="ux-status-caption">حالة الطلب</span><?= status_badge($r['status']) ?><span class="ux-status-caption">حالة النشر</span><?= status_badge($r['moderation_status']) ?></div>
+                <h2><?php if ($r['moderation_status'] === 'published'): ?><a href="<?= e(ui_context_url('requests/view.php', ['id' => (int)$r['id']] + $returnContextParams)) ?>"><?= e($r['title']) ?></a><?php else: ?><?= e($r['title']) ?><?php endif; ?></h2>
                 <div class="my-request-meta"><time datetime="<?= e(date(DATE_ATOM, strtotime($r['created_at']))) ?>"><i class="bi bi-calendar3"></i> أُنشئ في <?= e(date('Y-m-d', strtotime($r['created_at']))) ?></time></div>
                 <p class="my-request-description"><?= e(mb_strimwidth($r['description'], 0, 135, '…')) ?></p>
                 <p class="my-request-next">
-                    <?php if ($r['status'] === 'receiving_offers'): ?>بانتظار عروض الطلاب؛ ستراجعها من تفاصيل هذا الطلب.<?php elseif ($r['status'] === 'in_progress'): ?>المساعدة قيد التنفيذ؛ تابع المحادثات من «محادثاتي».<?php elseif ($r['status'] === 'completed'): ?>اكتملت المساعدة لهذا الطلب.<?php else: ?>أُلغي هذا الطلب ولا يستقبل عروضًا جديدة.<?php endif; ?>
+                    <?php if ($r['moderation_status'] !== 'published'): ?>الطلب غير متاح للعرض أو استقبال العروض بسبب حالة النشر.<?php elseif ($r['status'] === 'receiving_offers'): ?>بانتظار عروض الطلاب؛ ستراجعها من تفاصيل هذا الطلب.<?php elseif ($r['status'] === 'in_progress'): ?>المساعدة قيد التنفيذ؛ تابع المحادثات من «محادثاتي».<?php elseif ($r['status'] === 'completed'): ?>اكتملت المساعدة لهذا الطلب.<?php elseif ($r['status'] === 'cancelled'): ?>أُلغي هذا الطلب ولا يستقبل عروضًا جديدة.<?php else: ?>راجع حالة الطلب أعلاه.<?php endif; ?>
                 </p>
-                <div class="my-request-actions"><a class="btn btn-outline-primary" href="<?= e(ui_context_url('requests/view.php', ['id' => (int)$r['id']] + $returnContextParams)) ?>">عرض الطلب ومتابعته <i class="bi bi-arrow-left"></i></a><?php if ($r['status'] === 'in_progress'): ?><a class="text-action" href="<?= e(app_url('chat/index.php')) ?>">فتح محادثاتي</a><?php endif; ?></div>
+                <div class="my-request-actions"><?php if ($r['moderation_status'] === 'published'): ?><a class="btn btn-outline-primary" href="<?= e(ui_context_url('requests/view.php', ['id' => (int)$r['id']] + $returnContextParams)) ?>">عرض الطلب ومتابعته <i class="bi bi-arrow-left"></i></a><?php endif; ?><?php if ($r['status'] === 'in_progress'): ?><a class="text-action" href="<?= e(app_url('chat/index.php')) ?>">فتح محادثاتي</a><?php endif; ?></div>
             </article>
         <?php endforeach; ?>
     </section>

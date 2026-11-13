@@ -21,6 +21,7 @@ $returnContextParams = $chatBack['key'] === 'chats'
 header_ui('محادثاتي');
 ?>
 <nav class="ux-breadcrumb" aria-label="مسار الصفحة"><a href="<?= e(app_url('student/index.php')) ?>">الرئيسية</a><i class="bi bi-chevron-left" aria-hidden="true"></i><span>محادثاتي</span></nav>
+<?php if ($chatBack['key'] !== 'chats'): ?><?= page_back_link($chatBack['url'], $chatBack['label']) ?><?php endif; ?>
 <div class="ux-page-header"><div><span class="eyebrow"><i class="bi bi-chat-dots"></i> تواصل مرتبط بمساعدة</span><h1>محادثاتي</h1><p>كل محادثة مرتبطة بطلب وبعرض تم قبوله؛ ستعرف سبب التواصل ومن الطرف الآخر.</p></div></div>
 <?php if ($rows): ?>
     <section class="conversation-list" aria-label="محادثاتك">
@@ -28,7 +29,7 @@ header_ui('محادثاتي');
             <article class="conversation-card" data-request-id="<?= (int)$c['request_id'] ?>" data-other-name="<?= e($c['other_name']) ?>" data-conversation-status="<?= e($c['status']) ?>">
                 <div class="conversation-card-heading"><span class="conversation-card-icon"><i class="bi bi-chat-square-text"></i></span><div><span class="section-kicker">الطلب</span><h2><?= e($c['title']) ?></h2></div></div>
                 <p class="conversation-with">مع <strong><?= e($c['other_name']) ?></strong></p>
-                <div class="conversation-last-message"><span>آخر رسالة</span><p><?= e($c['last_msg'] ?? 'افتح المحادثة لمراجعة الرسائل أو بدء التواصل.') ?></p></div>
+                <div class="conversation-last-message"><span>آخر رسالة</span><p><?= e($c['last_msg'] === null ? 'لا توجد رسالة نصية أخيرة للعرض؛ افتح المحادثة لمراجعتها.' : $c['last_msg']) ?></p></div>
                 <div class="conversation-card-bottom"><span class="conversation-card-state"><span class="ux-status-caption">حالة المحادثة</span><?= status_badge($c['status']) ?><time datetime="<?= e(date(DATE_ATOM, strtotime($c['updated_at']))) ?>"><i class="bi bi-clock-history" aria-hidden="true"></i> آخر نشاط <?= e(date('Y-m-d · H:i', strtotime($c['updated_at']))) ?></time></span><a class="btn btn-primary" data-open-conversation href="<?= e(ui_context_url('chat/view.php', ['id' => (int)$c['id']] + $returnContextParams)) ?>">فتح المحادثة <i class="bi bi-arrow-left"></i></a></div>
             </article>
         <?php endforeach; ?>

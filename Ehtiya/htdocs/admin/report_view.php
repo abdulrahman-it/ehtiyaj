@@ -35,8 +35,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         error_log('[Ehtiyaj] Report review failed: '.$exception->getMessage());
         flash('تعذر إغلاق البلاغ. لم تُحفظ العملية.', 'danger');
     }
-    go('/admin/report_view.php?id='.$id);
-}header_ui('تفاصيل البلاغ');?><?= admin_page_back_link('reports', ['page' => input_int('back_page', 'get', 1), 'per_page' => input_int('back_per_page', 'get', 20)]) ?><?= admin_breadcrumbs([['label' => 'لوحة الإدارة', 'url' => admin_parent_url('dashboard')], ['label' => 'البلاغات', 'url' => admin_parent_url('reports', ['page' => input_int('back_page', 'get', 1), 'per_page' => input_int('back_per_page', 'get', 20)])], ['label' => 'تفاصيل البلاغ']]) ?><?= admin_page_intro('تفاصيل البلاغ', 'مراجعة سبب البلاغ والانتقال إلى المحادثة المرتبطة.', 'flag') ?><section class="card admin-detail-card admin-report-summary">
+    $returnUrl = admin_detail_url('report_view.php', ['id' => $id, 'back_report_status' => input_string('back_report_status', 'get'), 'back_page' => input_string('back_page', 'get'), 'back_per_page' => input_string('back_per_page', 'get')]);
+    go(substr($returnUrl, strlen(BASE_URL)));
+}header_ui('تفاصيل البلاغ');?><?= admin_page_back_link('reports', ['report_status' => input_string('back_report_status', 'get'), 'page' => input_int('back_page', 'get', 1), 'per_page' => input_int('back_per_page', 'get', 20)]) ?><?= admin_breadcrumbs([['label' => 'لوحة الإدارة', 'url' => admin_parent_url('dashboard')], ['label' => 'البلاغات', 'url' => admin_parent_url('reports', ['report_status' => input_string('back_report_status', 'get'), 'page' => input_int('back_page', 'get', 1), 'per_page' => input_int('back_per_page', 'get', 20)])], ['label' => 'تفاصيل البلاغ']]) ?><?= admin_page_intro('تفاصيل البلاغ', 'مراجعة سبب البلاغ والانتقال إلى المحادثة المرتبطة.', 'flag') ?><section class="card admin-detail-card admin-report-summary">
     <div class="admin-report-title"><span class="admin-report-icon"><i class="bi bi-flag" aria-hidden="true"></i></span><div><span class="section-kicker">معلومات البلاغ #<?= (int)$id ?></span><h2>بلاغ عن: <?=e($r['title'])?></h2></div><?= status_badge($r['status']) ?></div>
     <dl class="admin-report-facts">
         <div><dt>المبلّغ</dt><dd><?=e($r['full_name'])?></dd></div>
@@ -44,5 +45,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div><dt>رقم المحادثة</dt><dd>#<?= (int)$r['cid'] ?></dd></div>
     </dl>
     <div class="admin-report-reason"><span>سبب البلاغ</span><p><?=nl2br(e($r['reason']))?></p></div>
-    <div class="admin-detail-actions"><a class="btn btn-outline-primary" href="<?= e(admin_detail_url('reported_conversation.php', ['report_id' => $id, 'back_page' => input_int('back_page', 'get', 1), 'back_per_page' => input_int('back_per_page', 'get', 20)])) ?>"><i class="bi bi-chat-square-text" aria-hidden="true"></i> مراجعة المحادثة المرتبطة</a></div>
+    <div class="admin-detail-actions"><a class="btn btn-outline-primary" href="<?= e(admin_detail_url('reported_conversation.php', ['report_id' => $id, 'back_report_status' => input_string('back_report_status', 'get'), 'back_page' => input_int('back_page', 'get', 1), 'back_per_page' => input_int('back_per_page', 'get', 20)])) ?>"><i class="bi bi-chat-square-text" aria-hidden="true"></i> مراجعة المحادثة المرتبطة</a></div>
 </section><?php if ($r['status'] === 'open') {?><section class="card admin-detail-card admin-report-action mt-3"><h2 class="h5">إغلاق البلاغ</h2><form method="post"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><textarea name="note" class="form-control mb-3" placeholder="ملاحظة الحل (اختياري)"></textarea><button class="btn btn-primary">إغلاق</button></form></section><?php }footer_ui();?>

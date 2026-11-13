@@ -59,7 +59,7 @@ header_ui('تسجيل الدخول', true);
     <aside class="auth-aside">
         <span class="auth-aside-mark"><i class="bi bi-mortarboard"></i></span>
         <span class="eyebrow">مجتمع احتياج</span>
-        <h1>معًا، تصبح<br>الدراسة أسهل.</h1>
+        <h1>تسجيل الدخول<br>إلى احتياج</h1>
         <p>سجل دخولك لمتابعة طلباتك والتواصل مع زملائك.</p>
         <div class="auth-benefits">
             <span><i class="bi bi-check-circle"></i> دعم طلابي مجاني</span>

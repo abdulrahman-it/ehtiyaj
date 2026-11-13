@@ -76,7 +76,7 @@ header_ui('إنشاء حساب', true);
     <aside class="auth-aside">
         <span class="auth-aside-mark"><i class="bi bi-people"></i></span>
         <span class="eyebrow">أهلًا بك في احتياج</span>
-        <h1>تعلّم، شارك،<br>وساعد زملاءك.</h1>
+        <h1>إنشاء حساب<br>في احتياج</h1>
         <p>أنشئ حسابك الطلابي وابدأ بطلب المعرفة أو تقديمها.</p>
         <div class="auth-benefits">
             <span><i class="bi bi-check-circle"></i> مساحة طلابية مجانية</span>

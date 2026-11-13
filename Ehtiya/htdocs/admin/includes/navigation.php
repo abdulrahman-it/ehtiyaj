@@ -4,6 +4,39 @@
  * Fixed route maps and scalar allowlists prevent return links from becoming open redirects.
  */
 
+/** Validate the finite set of supported list filters, rejecting malformed query values. */
+function admin_filter_values(): array
+{
+    return [
+        'user_status' => ['active', 'suspended'],
+        'request_status' => ['receiving_offers', 'in_progress', 'completed', 'cancelled'],
+        'moderation' => ['published', 'removed'],
+        'report_status' => ['open', 'closed'],
+    ];
+}
+
+function admin_filter_input(string $key): string
+{
+    $values = admin_filter_values();
+    $value = array_key_exists($key, $_GET) ? $_GET[$key] : '';
+    if (!isset($values[$key]) || !is_string($value) || ($value !== '' && !in_array($value, $values[$key], true))) {
+        http_response_code(400);
+        exit('قيمة التصفية غير صالحة.');
+    }
+    return $value;
+}
+
+/** Copy only valid filter context into an internal URL. */
+function admin_add_filter_context(array &$safe, array $params): void
+{
+    foreach (admin_filter_values() as $key => $values) {
+        foreach ([$key, 'back_'.$key] as $name) {
+            $value = $params[$name] ?? null;
+            if (is_string($value) && in_array($value, $values, true)) $safe[$name] = $value;
+        }
+    }
+}
+
 /**
  * Build a local parent URL while retaining only approved search and pagination context.
  *
@@ -48,6 +81,7 @@ function admin_parent_url(string $parent, array $params = []): string
         $safe['back_q'] = mb_substr($backQ, 0, 120);
     }
 
+    admin_add_filter_context($safe, $params);
     $query = http_build_query($safe, '', '&', PHP_QUERY_RFC3986);
     return app_url($parents[$parent]['path'] . ($query !== '' ? '?' . $query : ''));
 }
@@ -80,6 +114,7 @@ function admin_detail_url(string $page, array $params = []): string
             $safe[$key] = $params[$key];
         }
     }
+    admin_add_filter_context($safe, $params);
     $query = http_build_query($safe, '', '&', PHP_QUERY_RFC3986);
     return app_url($routes[$page] . ($query !== '' ? '?' . $query : ''));
 }

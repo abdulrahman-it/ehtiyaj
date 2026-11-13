@@ -15,23 +15,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 flash('اسم النوع مطلوب وبحد أقصى 100 حرف.', 'danger');
             } else {
                 $pdo->beginTransaction();
+                $entityExists = true;
                 if ($action === 'create') {
-                    $pdo->prepare('INSERT INTO assistance_types(name) VALUES(?)')->execute([$name]);
+                    $insert = $pdo->prepare('INSERT INTO assistance_types(name) VALUES(?)');
+                    $insert->execute([$name]);
+                    if ($insert->rowCount() !== 1) throw new RuntimeException('Type insert failed');
                     $entityId = (int)$pdo->lastInsertId();
+                    $result = ['تمت إضافة نوع المساعدة.', 'success'];
                 } else {
                     $update = $pdo->prepare('UPDATE assistance_types SET name=? WHERE id=?');
                     $update->execute([$name, $id]);
-                    if ($update->rowCount() === 0) {
+                    $changed = $update->rowCount();
+                    if ($changed > 1) throw new RuntimeException('Unexpected type update count');
+                    $result = ['تم تحديث نوع المساعدة.', 'success'];
+                    if ($changed === 0) {
                         $exists = $pdo->prepare('SELECT id FROM assistance_types WHERE id=?');
                         $exists->execute([$id]);
                         if (!$exists->fetch()) {
-                            throw new RuntimeException('نوع المساعدة غير موجود.');
+                            $entityExists = false;
+                            $result = ['نوع المساعدة غير موجود.', 'warning'];
+                        } else {
+                            $result = ['لم يتغير نوع المساعدة.', 'warning'];
                         }
                     }
                     $entityId = $id;
                 }
-                audit($action, 'assistance_type', $entityId, 'إدارة نوع مساعدة');
-                $pdo->commit();
+                if ($entityExists) {
+                    audit($action, 'assistance_type', $entityId, 'إدارة نوع مساعدة');
+                }
+                if (!$pdo->commit()) throw new RuntimeException('Commit failed');
+                flash($result[0], $result[1]);
             }
         } elseif ($action === 'toggle') {
             $id = input_int('id');
@@ -40,12 +53,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $lock = $pdo->prepare('SELECT is_active FROM assistance_types WHERE id=? FOR UPDATE');
             $lock->execute([$id]);
             $type = $lock->fetch();
+            $result = ['نوع المساعدة غير موجود.', 'warning'];
             if ($type) {
                 $newState = (int)$type['is_active'] === 1 ? 0 : 1;
-                $pdo->prepare('UPDATE assistance_types SET is_active=? WHERE id=?')->execute([$newState, $id]);
-                audit('toggle', 'assistance_type', $id, 'تغيير حالة النوع');
+                $update = $pdo->prepare('UPDATE assistance_types SET is_active=? WHERE id=?');
+                $update->execute([$newState, $id]);
+                if ($update->rowCount() === 1) {
+                    audit('toggle', 'assistance_type', $id, 'تغيير حالة النوع');
+                    $result = ['تم تحديث حالة نوع المساعدة.', 'success'];
+                } else {
+                    $result = ['لم تتغير حالة نوع المساعدة.', 'warning'];
+                }
             }
-            $pdo->commit();
+            if (!$pdo->commit()) throw new RuntimeException('Commit failed');
+            flash($result[0], $result[1]);
         } elseif ($action === 'accept' || $action === 'reject') {
             $id = input_int('id');
             $pdo->beginTransaction();
@@ -53,6 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $lock = $pdo->prepare("SELECT * FROM assistance_type_suggestions WHERE id=? AND status='pending' FOR UPDATE");
             $lock->execute([$id]);
             $suggestion = $lock->fetch();
+            $result = ['الاقتراح غير موجود.', 'warning'];
             if ($suggestion) {
                 if ($action === 'accept') {
                     $typeValue = optional_input_string('type_id');
@@ -61,7 +83,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $typeId = (int)$typeValue;
                     if ($typeId === 0) {
-                        $pdo->prepare('INSERT INTO assistance_types(name) VALUES(?)')->execute([$suggestion['suggested_name']]);
+                        $insert = $pdo->prepare('INSERT INTO assistance_types(name) VALUES(?)');
+                        $insert->execute([$suggestion['suggested_name']]);
+                        if ($insert->rowCount() !== 1) throw new RuntimeException('Type insert failed');
                         $typeId = (int)$pdo->lastInsertId();
                     } else {
                         $typeCheck = $pdo->prepare('SELECT id FROM assistance_types WHERE id=?');
@@ -83,17 +107,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $accepted = $action === 'accept';
                 notify((int)$suggestion['student_id'], $accepted ? 'assistance_type_suggestion_accepted' : 'assistance_type_suggestion_rejected', $accepted ? 'قُبل اقتراح نوع المساعدة' : 'رُفض اقتراح نوع المساعدة', $accepted ? 'اعتمد المدير اقتراحك.' : 'راجع المدير اقتراحك ولم يعتمده.');
                 audit('review_suggestion', 'suggestion', $id, 'مراجعة اقتراح نوع مساعدة');
+                $result = [$accepted ? 'تم قبول الاقتراح.' : 'تم رفض الاقتراح.', 'success'];
+            } else {
+                $exists = $pdo->prepare('SELECT id FROM assistance_type_suggestions WHERE id=?');
+                $exists->execute([$id]);
+                if ($exists->fetch()) $result = ['سبق التعامل مع هذا الاقتراح؛ لم يحدث تغيير.', 'warning'];
             }
-            $pdo->commit();
+            if (!$pdo->commit()) throw new RuntimeException('Commit failed');
+            flash($result[0], $result[1]);
+        } else {
+            flash('الإجراء المطلوب غير صالح.', 'warning');
         }
     } catch (Throwable $exception) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
         error_log('[Ehtiyaj] Assistance type operation failed: '.$exception->getMessage());
-        flash('تعذر حفظ التغيير. لم تُحفظ العملية.', 'danger');
+        flash('تعذر تأكيد التغيير. راجع الحالة قبل إعادة المحاولة.', 'danger');
     }
-    go('/admin/assistance_types.php');
+    $returnUrl = admin_parent_url('assistance-types', ['page' => input_string('page', 'get'), 'per_page' => input_string('per_page', 'get')]);
+    go(substr($returnUrl, strlen(BASE_URL)));
 }
 $types = $pdo->query('SELECT * FROM assistance_types ORDER BY name')->fetchAll();
 $suggestionCount = (int)$pdo->query('SELECT COUNT(*) FROM assistance_type_suggestions')->fetchColumn();
@@ -103,4 +136,4 @@ $suggestionQuery->bindValue(1, $suggestionPagination['per_page'], PDO::PARAM_INT
 $suggestionQuery->bindValue(2, $suggestionPagination['offset'], PDO::PARAM_INT);
 $suggestionQuery->execute();
 $suggestions = $suggestionQuery->fetchAll();
-header_ui('أنواع المساعدة');?><?= admin_page_back_link('dashboard') ?><?= admin_page_intro('أنواع المساعدة', 'إدارة أنواع المساعدة ومراجعة اقتراحات الطلاب.', 'grid') ?><div class="card p-4 mb-3"><h5>إضافة نوع</h5><form method="post" class="d-flex gap-2"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="create"><input name="name" class="form-control" maxlength="100" required placeholder="اسم النوع"><button class="btn btn-primary">إضافة</button></form></div><div class="card p-3 mb-4"><div class="table-responsive"><table class="table"><thead><tr><th>الاسم</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody><?php foreach ($types as $t) {?><tr><td><form method="post" class="d-flex gap-2"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="<?=$t['id']?>"><input name="name" class="form-control" value="<?=e($t['name'])?>"><button class="btn btn-outline-primary">حفظ</button></form></td><td><?=$t['is_active'] ? 'مفعل' : 'معطل'?></td><td><form method="post"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="<?=$t['id']?>"><button class="btn btn-sm btn-outline-secondary">تفعيل/تعطيل</button></form></td></tr><?php }?></tbody></table></div></div><h2>اقتراحات الطلاب</h2><?php foreach ($suggestions as $s) {?><div class="card p-3 mb-2"><strong><?=e($s['suggested_name'])?></strong> — <?=e($s['full_name'])?> <span class="pill"><?=e($s['status'])?></span><p><?=e($s['details'])?></p><?php if ($s['status'] === 'pending') {?><div class="d-flex flex-wrap gap-2"><form method="post" class="d-flex gap-2"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="accept"><input type="hidden" name="id" value="<?=$s['id']?>"><select class="form-select" name="type_id"><option value="0">إنشاء نوع جديد</option><?php foreach ($types as $t) {?><option value="<?=$t['id']?>"><?=e($t['name'])?></option><?php }?></select><button class="btn btn-success">قبول</button></form><form method="post" class="d-flex gap-2"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="reject"><input type="hidden" name="id" value="<?=$s['id']?>"><input class="form-control" name="note" placeholder="ملاحظة"><button class="btn btn-outline-danger">رفض</button></form></div><?php }?></div><?php }?><?=pagination_ui($suggestionPagination, 'اقتراحات أنواع المساعدة')?><?php footer_ui();?>
+header_ui('أنواع المساعدة');?><?= admin_page_back_link('dashboard') ?><?= admin_page_intro('أنواع المساعدة', 'إدارة أنواع المساعدة ومراجعة اقتراحات الطلاب.', 'grid') ?><div class="card p-4 mb-3"><h5>إضافة نوع</h5><form method="post" class="d-flex gap-2"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="create"><input name="name" class="form-control" maxlength="100" required aria-label="اسم نوع المساعدة الجديد" placeholder="اسم النوع"><button class="btn btn-primary">إضافة</button></form></div><div class="card p-3 mb-4"><div class="table-responsive"><table class="table"><thead><tr><th>الاسم</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody><?php foreach ($types as $t) {?><tr><td><form method="post" class="d-flex gap-2"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="<?=$t['id']?>"><input name="name" class="form-control" aria-label="اسم نوع المساعدة" value="<?=e($t['name'])?>"><button class="btn btn-outline-primary">حفظ</button></form></td><td><?=$t['is_active'] ? 'مفعل' : 'معطل'?></td><td><form method="post"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="<?=$t['id']?>"><button class="btn btn-sm btn-outline-secondary">تفعيل/تعطيل</button></form></td></tr><?php }?></tbody></table></div></div><h2>اقتراحات الطلاب</h2><?php foreach ($suggestions as $s) {?><div class="card p-3 mb-2"><strong><?=e($s['suggested_name'])?></strong> — <?=e($s['full_name'])?> <span class="pill"><?=e(status_label((string)$s['status']))?></span><p><?=e($s['details'])?></p><?php if ($s['status'] === 'pending') {?><div class="d-flex flex-wrap gap-2"><form method="post" class="d-flex gap-2"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="accept"><input type="hidden" name="id" value="<?=$s['id']?>"><select class="form-select" name="type_id" aria-label="نوع المساعدة للاقتراح"><option value="0">إنشاء نوع جديد</option><?php foreach ($types as $t) {?><option value="<?=$t['id']?>"><?=e($t['name'])?></option><?php }?></select><button class="btn btn-success">قبول</button></form><form method="post" class="d-flex gap-2"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="reject"><input type="hidden" name="id" value="<?=$s['id']?>"><input class="form-control" name="note" aria-label="ملاحظة الرفض" placeholder="ملاحظة"><button class="btn btn-outline-danger">رفض</button></form></div><?php }?></div><?php }?><?=pagination_ui($suggestionPagination, 'اقتراحات أنواع المساعدة')?><?php footer_ui();?>

@@ -20,6 +20,39 @@ set_exception_handler(static function (Throwable $exception): void {
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/majors.php';
 
+/** Fixed public routes only; never derive SEO metadata or a canonical URL from the Host header. */
+function seo_public_pages(): array
+{
+    return [
+        '/index.php' => ['منصة المساعدة الطلابية', 'احتياج منصة طلابية مجانية لطلب المساعدة الأكاديمية والتقنية وتبادل المعرفة بين الطلاب.'],
+        '/about.php' => ['عن منصة احتياج', 'تعرّف على احتياج وكيف تتيح للطلاب طلب المساعدة وتقديمها والتواصل بعد قبول العرض.'],
+        '/privacy.php' => ['سياسة الخصوصية', 'تعرّف على بيانات الحساب والطلبات والمحادثات وإعدادات الخصوصية وإمكانات الاحتفاظ في احتياج.'],
+        '/terms.php' => ['الشروط والأحكام', 'اطّلع على الاستخدام المسؤول لمنصة احتياج، ومسؤولية المحتوى والبلاغات وحدود الخدمة.'],
+        '/faq.php' => ['الأسئلة الشائعة', 'إجابات عن إنشاء الاحتياجات وتقديم المساعدة والتواصل والبلاغات والخصوصية في احتياج.'],
+        '/contact.php' => ['التواصل والمساعدة', 'تعرّف على طريقة الإبلاغ عن مشكلة في محادثة ومعلومات التواصل المتاحة في احتياج.'],
+        '/auth/login.php' => ['تسجيل الدخول', 'سجّل الدخول إلى احتياج لمتابعة طلبات المساعدة والعروض والمحادثات الطلابية.'],
+        '/auth/register.php' => ['إنشاء حساب طالب', 'أنشئ حساب طالب في احتياج لطلب المساعدة وتقديمها وتبادل المعرفة مع الطلاب.'],
+    ];
+}
+
+/** Determine the entry script relative to the configured application root, without trusting the request host. */
+function seo_entry_path(): string
+{
+    $script = $_SERVER['SCRIPT_NAME'] ?? '';
+    if (!is_string($script)) return '';
+    if (BASE_URL !== '') {
+        if (!str_starts_with($script, BASE_URL . '/')) return '';
+        $script = substr($script, strlen(BASE_URL));
+    }
+    return $script;
+}
+
+$seoPage = seo_public_pages()[seo_entry_path()] ?? null;
+// Robots directives are advisory; existing role/session guards remain authoritative.
+if ($seoPage === null) {
+    header('X-Robots-Tag: noindex, nofollow');
+}
+
 // Conservative policy for the current Bootstrap, icon, font and inline UI assets.
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');
@@ -310,7 +343,7 @@ function active_write(): void
     need_login();
     if (me()['status'] !== 'active') {
         http_response_code(403);
-        exit('الحساب موقوف مؤقتًا؛ يمكنك التصفح فقط.');
+        exit('الحساب غير متاح. يرجى تسجيل الدخول أو مراجعة إدارة المنصة.');
     }
 }
 
@@ -406,7 +439,7 @@ function app_url(string $path): string
 /** Internal URL builder for context-aware navigation links in templates. */
 function ui_context_url(string $path, array $parameters = []): string
 {
-    $allowedKeys = ['id', 'report_id', 'q', 'major', 'page', 'per_page', 'return_to', 'back_q', 'back_major', 'back_page', 'back_per_page', 'back_report_id', 'back_request_id'];
+    $allowedKeys = ['id', 'report_id', 'q', 'major', 'type', 'page', 'per_page', 'return_to', 'back_q', 'back_major', 'back_type', 'back_page', 'back_per_page', 'back_report_id', 'back_request_id'];
     $safe = [];
     foreach ($parameters as $key => $value) {
         if (in_array($key, $allowedKeys, true) && is_scalar($value)) {
@@ -454,9 +487,11 @@ function ui_back_context(string $fallback = 'home'): array
     if ($context === 'public') {
         $q = input_string('back_q', 'get');
         $major = input_string('back_major', 'get');
-        $query = ['q' => $q, 'major' => $major, 'page' => $page, 'per_page' => $perPage];
+        $type = input_string('back_type', 'get');
+        $query = ['q' => $q, 'major' => $major, 'type' => $type, 'page' => $page, 'per_page' => $perPage];
         $forward['back_q'] = $q;
         $forward['back_major'] = $major;
+        $forward['back_type'] = $type;
     } elseif ($context === 'request') {
         $query = ['id' => $backRequestId];
         $forward['back_request_id'] = $backRequestId;
@@ -581,15 +616,27 @@ function header_nav_links(?array $user, bool $mobile = false): void
 }
 
 /** Render the shared document header and navigation for the selected layout. */
-function header_ui(string $title = 'احتياج', bool $authLayout = false): void
+function header_ui(string $title = 'احتياج', bool $authLayout = false, ?array $unreadSnapshot = null): void
 {
+    global $seoPage;
     $user = me();
     $unreadCount = 0;
     if ($user) {
-        global $pdo;
-        $statement = $pdo->prepare('SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0');
-        $statement->execute([$user['id']]);
-        $unreadCount = (int) $statement->fetchColumn();
+        // Only reuse a snapshot explicitly supplied for this authenticated user.
+        if ($unreadSnapshot !== null && ($unreadSnapshot['user_id'] ?? null) === (int) $user['id']
+            && is_int($unreadSnapshot['count'] ?? null) && $unreadSnapshot['count'] >= 0) {
+            $unreadCount = $unreadSnapshot['count'];
+        } else {
+            global $pdo;
+            try {
+                $statement = $pdo->prepare('SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0');
+                $statement->execute([$user['id']]);
+                $unreadCount = (int) $statement->fetchColumn();
+            } catch (Throwable $exception) {
+                error_log('[Ehtiyaj] Unable to load unread notification count.');
+                $unreadCount = null;
+            }
+        }
     }
     $currentAdminPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
     if (BASE_URL !== '' && str_starts_with($currentAdminPath, BASE_URL)) {
@@ -604,7 +651,15 @@ function header_ui(string $title = 'احتياج', bool $authLayout = false): vo
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#10283f">
-        <title><?= e($title) ?> | احتياج</title>
+        <title><?= e($seoPage !== null ? $seoPage[0] : $title) ?> | احتياج</title>
+        <?php if ($seoPage !== null): ?>
+            <meta name="description" content="<?= e($seoPage[1]) ?>">
+            <meta property="og:title" content="<?= e($seoPage[0]) ?> | احتياج">
+            <meta property="og:description" content="<?= e($seoPage[1]) ?>">
+            <meta property="og:type" content="website">
+        <?php else: ?>
+            <meta name="robots" content="noindex, nofollow">
+        <?php endif; ?>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
         <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -656,9 +711,9 @@ function header_ui(string $title = 'احتياج', bool $authLayout = false): vo
                         <?php if ($user['role'] === 'student' && $user['status'] === 'active'): ?>
                             <a class="header-create-link" href="<?= e(app_url('requests/create.php')) ?>"><i class="bi bi-plus-lg"></i><span>إنشاء طلب</span></a>
                         <?php endif; ?>
-                        <a class="notification-action<?= $adminNotificationsCurrent ? ' is-current' : '' ?>" href="<?= e(app_url($user['role'] === 'admin' ? 'admin/notifications.php' : 'notifications/index.php')) ?>" aria-label="الإشعارات، غير المقروء <?= $unreadCount ?>"<?= $adminNotificationsCurrent ? ' aria-current="page"' : '' ?>>
+                        <a class="notification-action<?= $adminNotificationsCurrent ? ' is-current' : '' ?>" href="<?= e(app_url($user['role'] === 'admin' ? 'admin/notifications.php' : 'notifications/index.php')) ?>" aria-label="<?= $unreadCount === null ? 'الإشعارات، تعذر تحميل عدد غير المقروء' : 'الإشعارات، غير المقروء '.(int)$unreadCount ?>"<?= $adminNotificationsCurrent ? ' aria-current="page"' : '' ?>>
                             <i class="bi bi-bell" aria-hidden="true"></i>
-                            <?php if ($unreadCount > 0): ?><span class="notification-count"><?= min($unreadCount, 99) ?></span><?php endif; ?>
+                            <?php if ($unreadCount === null): ?><span class="notification-count" aria-hidden="true">!</span><?php elseif ($unreadCount > 0): ?><span class="notification-count" aria-hidden="true"><?= $unreadCount > 99 ? '99+' : (int)$unreadCount ?></span><?php endif; ?>
                         </a>
                         <div class="user-chip">
                             <span class="user-avatar" aria-hidden="true"><?= e(mb_substr($user['full_name'], 0, 1)) ?></span>
@@ -737,6 +792,10 @@ function footer_ui(bool $compact = false): void
                     <nav aria-label="روابط صفحات المصادقة">
                         <a href="<?= e(app_url('index.php')) ?>">الرئيسية</a>
                         <a href="<?= e(app_url('about.php')) ?>">عن احتياج</a>
+                        <a href="<?= e(app_url('privacy.php')) ?>">الخصوصية</a>
+                        <a href="<?= e(app_url('terms.php')) ?>">الشروط</a>
+                        <a href="<?= e(app_url('faq.php')) ?>">الأسئلة الشائعة</a>
+                        <a href="<?= e(app_url('contact.php')) ?>">التواصل</a>
                         <?php if ($isLoginPage): ?>
                             <a href="<?= e(app_url('auth/register.php')) ?>">إنشاء حساب</a>
                         <?php else: ?>
@@ -780,10 +839,13 @@ function footer_ui(bool $compact = false): void
                                 <a href="<?= e(app_url('admin/notifications.php')) ?>"><i class="bi bi-bell" aria-hidden="true"></i> الإشعارات</a>
                             <?php endif; ?>
                         </nav>
-                        <section class="footer-help">
-                            <span class="footer-note-icon"><i class="bi bi-heart-fill" aria-hidden="true"></i></span>
-                            <div><h2>تعاون طلابي مجاني</h2><p>تعرّف على آلية المنصة وخطوات طلب المساعدة وتقديمها.</p><a href="<?= e(app_url('about.php')) ?>">اكتشف كيف تعمل احتياج <i class="bi bi-arrow-left" aria-hidden="true"></i></a></div>
-                        </section>
+                        <nav class="footer-links trust-footer-links" aria-label="الثقة والمساعدة">
+                            <h2>الثقة والمساعدة</h2>
+                            <a href="<?= e(app_url('privacy.php')) ?>"><i class="bi bi-shield-check" aria-hidden="true"></i> سياسة الخصوصية</a>
+                            <a href="<?= e(app_url('terms.php')) ?>"><i class="bi bi-file-text" aria-hidden="true"></i> الشروط والأحكام</a>
+                            <a href="<?= e(app_url('faq.php')) ?>"><i class="bi bi-question-circle" aria-hidden="true"></i> الأسئلة الشائعة</a>
+                            <a href="<?= e(app_url('contact.php')) ?>"><i class="bi bi-chat-dots" aria-hidden="true"></i> التواصل</a>
+                        </nav>
                     </div>
                     <div class="footer-bottom">
                         <span>© <?= date('Y') ?> احتياج · Ehtiyaj</span>

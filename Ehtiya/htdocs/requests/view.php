@@ -9,7 +9,7 @@ $q->execute([$id]);
 $r = $q->fetch();
 if (!$r) {
     http_response_code(404);
-    exit('الطلب غير موجود.');
+    exit('الطلب غير متاح أو لم يعد منشورًا.');
 }$mine = $r['owner_id'] == me()['id'];
 $defaultReturnContext = $mine ? 'mine' : 'public';
 $back = ui_back_context($defaultReturnContext);
@@ -67,58 +67,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('تعذر تحديث العرض. لم تُحفظ العملية.', 'danger');
         }
     }
-    // Accept selected submitted offers atomically; each accepted offer receives a linked conversation and notice.
-    if (input_string('action') === 'accept' && $mine && $r['status'] === 'receiving_offers') {
-        $submittedOffers = $_POST['offers'] ?? [];
-        $oids = [];
-        if (is_array($submittedOffers)) {
-            foreach ($submittedOffers as $submittedOffer) {
-                if (is_int($submittedOffer) || (is_string($submittedOffer) && preg_match('/^[0-9]+$/D', $submittedOffer))) {
-                    $offerValue = (int)$submittedOffer;
-                    if ($offerValue > 0) {
-                        $oids[] = $offerValue;
+    // Accept valid selected offers in one transaction; report any selections skipped as unavailable.
+    if (input_string('action') === 'accept') {
+        if (!$mine) {
+            flash('لا يمكنك قبول عروض على طلب لا تملكه.', 'danger');
+        } elseif ($r['status'] !== 'receiving_offers') {
+            flash('الطلب لا يستقبل عروضًا الآن؛ لم يُقبل أي عرض.', 'warning');
+        } else {
+            $submittedOffers = $_POST['offers'] ?? [];
+            $oids = [];
+            $skippedCount = 0;
+            if (is_array($submittedOffers)) {
+                foreach ($submittedOffers as $submittedOffer) {
+                    if (is_int($submittedOffer) || is_string($submittedOffer)) {
+                        $digits = (string)$submittedOffer;
+                        if (preg_match('/^[0-9]+$/D', $digits)) {
+                            // Normalize before comparing as strings: casting an overflowing ID clamps it to PHP_INT_MAX.
+                            $digits = ltrim($digits, '0');
+                            $maxId = (string)PHP_INT_MAX;
+                            if ($digits !== '' && (strlen($digits) < strlen($maxId)
+                                || (strlen($digits) === strlen($maxId) && strcmp($digits, $maxId) <= 0))) {
+                                $oids[] = (int)$digits;
+                                continue;
+                            }
+                        }
+                    }
+                    $skippedCount++;
+                }
+                $oids = array_values(array_unique($oids));
+            }
+            if ($oids) {
+                try {
+                    $pdo->beginTransaction();
+                    if (!lock_active_student((int)me()['id'])) {
+                        throw new RuntimeException('الحساب لم يعد نشطًا.');
+                    }
+                    $lockRequest = $pdo->prepare("SELECT * FROM requests WHERE id=? AND owner_id=? AND moderation_status='published' FOR UPDATE");
+                    $lockRequest->execute([$id, me()['id']]);
+                    $currentRequest = $lockRequest->fetch();
+                    if (!$currentRequest || $currentRequest['status'] !== 'receiving_offers') {
+                        throw new RuntimeException('تغيرت حالة الطلب ولم يعد يستقبل عروضًا.');
+                    }
+                    $acceptedCount = 0;
+                    foreach ($oids as $oid) {
+                        $z = $pdo->prepare("SELECT * FROM offers WHERE id=? AND request_id=? AND status='submitted' FOR UPDATE");
+                        $z->execute([$oid,$id]);
+                        $o = $z->fetch();
+                        if (!$o) {
+                            $skippedCount++;
+                            continue;
+                        }
+                        $updateOffer = $pdo->prepare("UPDATE offers SET status='accepted',accepted_at=NOW() WHERE id=? AND request_id=? AND status='submitted'");
+                        $updateOffer->execute([$oid, $id]);
+                        if ($updateOffer->rowCount() !== 1) {
+                            throw new RuntimeException('تغيرت حالة أحد العروض أثناء العملية.');
+                        }
+                        $pdo->prepare('INSERT INTO conversations(request_id,offer_id,owner_id,helper_id) VALUES(?,?,?,?)')->execute([$id,$oid,$currentRequest['owner_id'],$o['student_id']]);
+                        $cid = $pdo->lastInsertId();
+                        notify($o['student_id'], 'offer_accepted', 'تم قبول عرضك', 'تم قبول عرض المساعدة الخاص بك.', '/chat/view.php?id='.$cid);
+                        $acceptedCount++;
+                    }
+                    if ($acceptedCount > 0) {
+                        $updateRequest = $pdo->prepare("UPDATE requests SET status='in_progress' WHERE id=? AND status='receiving_offers'");
+                        $updateRequest->execute([$id]);
+                        if ($updateRequest->rowCount() !== 1) {
+                            throw new RuntimeException('تغيرت حالة الطلب أثناء العملية.');
+                        }
+                    }
+                    if (!$pdo->commit()) {
+                        throw new RuntimeException('تعذر تأكيد المعاملة.');
+                    }
+                    if ($acceptedCount === 0) {
+                        flash('لم يُقبل أي عرض؛ العروض المحددة غير متاحة أو سبق التعامل معها.', 'warning');
+                    } elseif ($skippedCount > 0) {
+                        flash('قُبل ' . $acceptedCount . ' من العروض المحددة وأُنشئت المحادثات المرتبطة. لم يُقبل ' . $skippedCount . ' لأنه غير متاح أو سبق التعامل معه.', 'warning');
+                    } else {
+                        flash('تم قبول العروض المحددة وإنشاء المحادثات.');
+                    }
+                } catch (Throwable $e) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    if ($e instanceof RuntimeException && !($e instanceof PDOException) && $e->getMessage() === 'تغيرت حالة الطلب ولم يعد يستقبل عروضًا.') {
+                        flash('تغيرت حالة الطلب ولم يعد يستقبل عروضًا؛ لم يُقبل أي عرض.', 'warning');
+                    } else {
+                        flash('تعذر تأكيد نتيجة العملية. راجع حالة الطلب والعروض قبل إعادة المحاولة.', 'danger');
                     }
                 }
+            } else {
+                flash('حدد عرضًا صالحًا واحدًا على الأقل؛ لم يُقبل أي عرض.', 'warning');
             }
-            $oids = array_values(array_unique($oids));
-        }
-        if ($oids) {
-            try {
-                $pdo->beginTransaction();
-                if (!lock_active_student((int)me()['id'])) {
-                    throw new RuntimeException('الحساب لم يعد نشطًا.');
-                }
-                $lockRequest = $pdo->prepare("SELECT * FROM requests WHERE id=? AND owner_id=? AND moderation_status='published' FOR UPDATE");
-                $lockRequest->execute([$id, me()['id']]);
-                $currentRequest = $lockRequest->fetch();
-                if (!$currentRequest || $currentRequest['status'] !== 'receiving_offers') {
-                    throw new RuntimeException('تغيرت حالة الطلب ولم يعد يستقبل عروضًا.');
-                }
-                foreach ($oids as $oid) {
-                    $z = $pdo->prepare("SELECT * FROM offers WHERE id=? AND request_id=? AND status='submitted' FOR UPDATE");
-                    $z->execute([$oid,$id]);
-                    $o = $z->fetch();
-                    if (!$o) {
-                        continue;
-                    }$pdo->prepare("UPDATE offers SET status='accepted',accepted_at=NOW() WHERE id=?")->execute([$oid]);
-                    $pdo->prepare('INSERT INTO conversations(request_id,offer_id,owner_id,helper_id) VALUES(?,?,?,?)')->execute([$id,$oid,$r['owner_id'],$o['student_id']]);
-                    $cid = $pdo->lastInsertId();
-                    notify($o['student_id'], 'offer_accepted', 'تم قبول عرضك', 'تم قبول عرض المساعدة الخاص بك.', '/chat/view.php?id='.$cid);
-                }
-                $acceptedCount = $pdo->prepare("SELECT COUNT(*) FROM offers WHERE request_id=? AND status='accepted'");
-                $acceptedCount->execute([$id]);
-                if ((int) $acceptedCount->fetchColumn() > 0) {
-                    $pdo->prepare("UPDATE requests SET status='in_progress' WHERE id=? AND status='receiving_offers'")->execute([$id]);
-                }
-                $pdo->commit();
-                flash('تم قبول العروض المحددة وإنشاء المحادثات.');
-            } catch (Throwable $e) {
-                if ($pdo->inTransaction()) {
-                    $pdo->rollBack();
-                }flash('تعذر إتمام العملية. أعد المحاولة.', 'danger');
-            }
-        } else {
-            flash('حدد عرضًا صالحًا واحدًا على الأقل.', 'danger');
         }
     }
     // Completion/cancellation also makes related conversations read-only and notifies affected helpers.
@@ -178,9 +216,13 @@ if ($mine) {
     $z = $pdo->prepare('SELECT o.*,u.full_name,u.major FROM offers o JOIN users u ON u.id=o.student_id WHERE o.request_id=? ORDER BY o.created_at DESC');
     $z->execute([$id]);
     $offers = $z->fetchAll();
-}$mineOffer = $pdo->prepare('SELECT id FROM offers WHERE request_id=? AND student_id=?');
-$mineOffer->execute([$id,me()['id']]);
-$already = (bool)$mineOffer->fetch();
+}
+$already = false;
+if (!$mine) {
+    $mineOffer = $pdo->prepare('SELECT id FROM offers WHERE request_id=? AND student_id=?');
+    $mineOffer->execute([$id,me()['id']]);
+    $already = (bool)$mineOffer->fetch();
+}
 header_ui('تفاصيل الطلب');?>
 <nav class="ux-breadcrumb" aria-label="مسار الصفحة"><a href="<?=e(app_url('student/index.php'))?>">الرئيسية</a><i class="bi bi-chevron-left" aria-hidden="true"></i><span>تفاصيل الطلب: <?=e($r['title'])?></span></nav>
 <?= page_back_link($back['url'], $back['label']) ?>
@@ -198,12 +240,12 @@ header_ui('تفاصيل الطلب');?>
    <?php if ($r['status'] === 'in_progress') {?><form method="post"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="complete"><button class="btn btn-primary" data-confirm="تأكيد إكمال الطلب؟"><i class="bi bi-check-lg"></i> إكمال الطلب</button></form><?php }?>
    <?php if (in_array($r['status'], ['receiving_offers','in_progress'])) {?><form method="post"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="cancel"><button class="btn btn-outline-danger" data-confirm="تأكيد إلغاء الطلب؟"><i class="bi bi-x-lg"></i> إلغاء الطلب</button></form><?php }?>
   </div>
-  <?php } elseif ($mine && me()['status'] === 'suspended') {?><div class="offer-sent-state"><span class="muted-icon"><i class="bi bi-lock"></i></span><strong>الحساب موقوف مؤقتًا</strong><p>يمكنك مراجعة طلبك وعروضه، لكن إجراءات التعديل متوقفة.</p></div>
+  <?php } elseif ($mine && me()['status'] === 'suspended') {?><div class="offer-sent-state"><span class="muted-icon"><i class="bi bi-lock"></i></span><strong>الحساب موقوف مؤقتًا</strong><p>لا يمكن للحساب الموقوف تسجيل الدخول أو استخدام الصفحات المحمية.</p></div>
   <?php } elseif ($r['status'] === 'receiving_offers' && !$already && me()['status'] === 'active') {?>
    <span class="section-kicker">هل تستطيع المساعدة؟</span><h2><i class="bi bi-hand-thumbs-up" aria-hidden="true"></i> قدّم عرض مساعدة</h2><p class="action-panel-hint">رسالة قصيرة توضّح كيف يمكنك مساعدة صاحب الطلب.</p>
    <form method="post" class="offer-form"><input type="hidden" name="csrf" value="<?=e(csrf())?>"><input type="hidden" name="action" value="offer"><label class="form-label" for="offer-message">رسالة العرض</label><textarea id="offer-message" name="message" class="form-control" rows="4" maxlength="1000" data-count="1000" required placeholder="أخبره بما يمكنك تقديمه"></textarea><div class="field-meta"><small>عرض واحد لكل طلب.</small><small><span data-count-output>0</span>/1000</small></div><button class="btn btn-primary w-100 mt-3">إرسال العرض <i class="bi bi-arrow-left"></i></button></form>
   <?php } elseif ($already && !$mine) {?><div class="offer-sent-state"><span><i class="bi bi-check2"></i></span><strong>أرسلت عرضك بالفعل</strong><p>تابع حالة العرض من صفحة عروضي.</p><a href="<?=e(app_url('offers/my.php'))?>">الانتقال إلى عروضي <i class="bi bi-arrow-left"></i></a></div>
-  <?php } elseif (!$mine && me()['status'] === 'suspended') {?><div class="offer-sent-state"><span class="muted-icon"><i class="bi bi-lock"></i></span><strong>الإجراءات متوقفة مؤقتًا</strong><p>حسابك موقوف مؤقتًا ويمكنك تصفح الطلبات فقط.</p></div>
+  <?php } elseif (!$mine && me()['status'] === 'suspended') {?><div class="offer-sent-state"><span class="muted-icon"><i class="bi bi-lock"></i></span><strong>الإجراءات متوقفة مؤقتًا</strong><p>لا يمكن للحساب الموقوف تسجيل الدخول أو استخدام الصفحات المحمية.</p></div>
   <?php } else {?><div class="offer-sent-state"><span class="muted-icon"><i class="bi bi-info-circle"></i></span><strong>الطلب لا يستقبل عروضًا الآن</strong><p>تغيرت حالة الطلب ولم يعد تقديم عرض جديد متاحًا.</p></div><?php }?>
  </aside>
 </div>
