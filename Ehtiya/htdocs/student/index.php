@@ -41,7 +41,7 @@ $unreadStatement = $pdo->prepare('SELECT COUNT(*) FROM notifications WHERE user_
 $unreadStatement->execute([$studentId]);
 $unreadNotifications = (int) $unreadStatement->fetchColumn();
 
-header_ui('مساحة الطالب');
+header_ui('مساحة الطالب', false, ['user_id' => $studentId, 'count' => $unreadNotifications]);
 ?>
 <section class="dashboard-welcome">
     <div>
@@ -54,7 +54,7 @@ header_ui('مساحة الطالب');
 <?php if ($user['status'] === 'suspended'): ?>
     <div class="account-notice" role="status">
         <i class="bi bi-info-circle"></i>
-        <div><strong>حسابك موقوف مؤقتًا</strong><span>يمكنك الاطلاع على بياناتك، لكن لن تتمكن من إرسال طلب أو عرض أو رسالة.</span></div>
+        <div><strong>حسابك موقوف مؤقتًا</strong><span>لا يمكن للحساب الموقوف تسجيل الدخول أو استخدام الصفحات المحمية.</span></div>
         <a href="<?= e(app_url('student/account-status.php')) ?>">معرفة التفاصيل</a>
     </div>
 <?php endif; ?>

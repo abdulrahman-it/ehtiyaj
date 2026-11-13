@@ -67,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $count = $pdo->prepare('SELECT COUNT(*) FROM offers WHERE student_id=?');
 $count->execute([me()['id']]);
 $pagination = pagination_state((int)$count->fetchColumn());
-$q = $pdo->prepare('SELECT o.*,r.title,r.id rid,r.status request_status FROM offers o JOIN requests r ON r.id=o.request_id WHERE o.student_id=? ORDER BY o.created_at DESC,o.id DESC LIMIT ? OFFSET ?');
+$q = $pdo->prepare('SELECT o.*,r.title,r.id rid,r.status request_status,r.moderation_status FROM offers o JOIN requests r ON r.id=o.request_id WHERE o.student_id=? ORDER BY o.created_at DESC,o.id DESC LIMIT ? OFFSET ?');
 $q->bindValue(1, (int)me()['id'], PDO::PARAM_INT);
 $q->bindValue(2, $pagination['per_page'], PDO::PARAM_INT);
 $q->bindValue(3, $pagination['offset'], PDO::PARAM_INT);
@@ -88,15 +88,16 @@ header_ui('عروضي');
         <?php foreach ($rows as $o): ?>
             <article class="my-offer-card">
                 <span class="offer-identity"><i class="bi bi-hand-thumbs-up" aria-hidden="true"></i> عرضك على طلب</span>
-                <h2><a href="<?= e(ui_context_url('requests/view.php', ['id' => (int)$o['rid']] + $returnContextParams)) ?>"><?= e($o['title']) ?></a></h2>
+                <h2><?php if ($o['moderation_status'] === 'published'): ?><a href="<?= e(ui_context_url('requests/view.php', ['id' => (int)$o['rid']] + $returnContextParams)) ?>"><?= e($o['title']) ?></a><?php else: ?><?= e($o['title']) ?><?php endif; ?></h2>
                 <div class="offer-message-preview"><span>رسالتي</span><p><?= e($o['message']) ?></p></div>
                 <time class="my-offer-date" datetime="<?= e(date(DATE_ATOM, strtotime($o['created_at']))) ?>"><i class="bi bi-calendar3" aria-hidden="true"></i> أُرسل في <?= e(date('Y-m-d', strtotime($o['created_at']))) ?></time>
                 <div class="offer-state-grid">
-                    <div><span>حالة العرض</span><?= status_badge($o['status']) ?><small><?php if ($o['status'] === 'submitted'): ?>بانتظار رد صاحب الطلب.<?php elseif ($o['status'] === 'accepted'): ?>اختار صاحب الطلب عرضك.<?php elseif ($o['status'] === 'rejected'): ?>اختار صاحب الطلب عرضًا آخر.<?php else: ?>انسحبت من هذا العرض.<?php endif; ?></small></div>
-                    <div><span>حالة الطلب</span><?= status_badge($o['request_status']) ?><small><?php if ($o['request_status'] === 'receiving_offers'): ?>ما زال يستقبل العروض.<?php elseif ($o['request_status'] === 'in_progress'): ?>المساعدة قيد التنفيذ.<?php elseif ($o['request_status'] === 'completed'): ?>اكتملت المساعدة.<?php else: ?>أُلغي الطلب.<?php endif; ?></small></div>
+                    <div><span>حالة العرض</span><?php if ($o['status'] === 'submitted' && ($o['moderation_status'] !== 'published' || $o['request_status'] !== 'receiving_offers')): ?><span class="status-badge status-warning">مُقدَّم</span><?php else: ?><?= status_badge($o['status']) ?><?php endif; ?><small><?php if ($o['status'] === 'submitted' && ($o['moderation_status'] !== 'published' || $o['request_status'] !== 'receiving_offers')): ?>العرض مسجل، لكن الطلب لا يستقبل العروض الآن.<?php elseif ($o['status'] === 'submitted'): ?>بانتظار رد صاحب الطلب.<?php elseif ($o['status'] === 'accepted'): ?>اختار صاحب الطلب عرضك.<?php elseif ($o['status'] === 'rejected'): ?>لم يقبل صاحب الطلب هذا العرض.<?php elseif ($o['status'] === 'withdrawn'): ?>انسحبت من هذا العرض.<?php else: ?>راجع حالة العرض أعلاه.<?php endif; ?></small></div>
+                    <div><span>حالة الطلب</span><?= status_badge($o['request_status']) ?><small><?php if ($o['moderation_status'] !== 'published'): ?>الطلب غير متاح لاستقبال العروض بسبب حالة النشر.<?php elseif ($o['request_status'] === 'receiving_offers'): ?>ما زال يستقبل العروض.<?php elseif ($o['request_status'] === 'in_progress'): ?>المساعدة قيد التنفيذ.<?php elseif ($o['request_status'] === 'completed'): ?>اكتملت المساعدة.<?php elseif ($o['request_status'] === 'cancelled'): ?>أُلغي الطلب.<?php else: ?>راجع حالة الطلب أعلاه.<?php endif; ?></small></div>
+                    <div><span>حالة النشر</span><?= status_badge($o['moderation_status']) ?><?php if ($o['moderation_status'] !== 'published'): ?><small>تفاصيل الطلب غير متاحة حاليًا.</small><?php endif; ?></div>
                 </div>
                 <div class="my-offer-actions">
-                    <a class="btn btn-outline-primary" href="<?= e(ui_context_url('requests/view.php', ['id' => (int)$o['rid']] + $returnContextParams)) ?>">عرض الطلب <i class="bi bi-arrow-left"></i></a>
+                    <?php if ($o['moderation_status'] === 'published'): ?><a class="btn btn-outline-primary" href="<?= e(ui_context_url('requests/view.php', ['id' => (int)$o['rid']] + $returnContextParams)) ?>">عرض الطلب <i class="bi bi-arrow-left"></i></a><?php endif; ?>
                     <?php if ($o['status'] === 'accepted'): ?><a class="btn btn-primary" href="<?= e(app_url('chat/index.php')) ?>">انتقل إلى محادثاتي <i class="bi bi-chat-dots"></i></a><?php endif; ?>
                     <?php if ($o['status'] === 'accepted' && $o['request_status'] === 'in_progress' && me()['status'] === 'active'): ?>
                         <form method="post"><input type="hidden" name="csrf" value="<?= e(csrf()) ?>"><input type="hidden" name="id" value="<?= (int)$o['id'] ?>"><button class="btn btn-outline-danger" data-confirm="الانسحاب نهائي وسيتم إغلاق المحادثة للكتابة.">انسحاب من المساعدة</button></form>

@@ -1,0 +1,5 @@
+# Crawl directives are not access controls. PHP endpoints enforce their own permissions.
+User-agent: *
+Disallow: /config/
+Disallow: /includes/
+Disallow: /uploads/

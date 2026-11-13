@@ -1,11 +1,11 @@
 // Confirm state-changing actions and avoid accidental duplicate form submissions.
 document.querySelectorAll('form[data-confirm]').forEach(form => form.addEventListener('submit', event => {
-    if (!window.confirm(form.dataset.confirm || 'هل أنت متأكد؟')) event.preventDefault();
+    if (pendingForms.has(form) || !window.confirm(form.dataset.confirm || 'هل أنت متأكد؟')) event.preventDefault();
 }));
 document.querySelectorAll('button[data-confirm],a[data-confirm]').forEach(control => {
     if (control.closest('form[data-confirm]')) return;
     control.addEventListener('click', event => {
-        if (!window.confirm(control.dataset.confirm || 'هل أنت متأكد؟')) event.preventDefault();
+        if ((control.form && pendingForms.has(control.form)) || !window.confirm(control.dataset.confirm || 'هل أنت متأكد؟')) event.preventDefault();
     });
 });
 document.querySelectorAll('input[type=file][multiple]').forEach(input => input.addEventListener('change', () => {
@@ -91,7 +91,7 @@ function markFormPending(form, event, changeLabel = true) {
 window.addEventListener('pageshow', () => {
     for (const [form, state] of pendingForms) restorePendingForm(form, state);
 });
-document.querySelectorAll('form:not([data-confirm]):not(.offer-review-form)').forEach(form => form.addEventListener('submit', event => {
+document.querySelectorAll('form:not(.offer-review-form)').forEach(form => form.addEventListener('submit', event => {
     if (pendingForms.has(form)) { event.preventDefault(); return; }
     if (!event.defaultPrevented) markFormPending(form, event);
 }));
@@ -276,14 +276,7 @@ document.querySelectorAll('[data-match]').forEach(input => {
     source.addEventListener('input', validate);
 });
 
-// Flash messages behave like gentle, dismissible toasts.
-document.querySelectorAll('main .alert[role="status"]').forEach(alert => {
-    window.setTimeout(() => {
-        if (!alert.isConnected) return;
-        alert.classList.add('toast-dismiss');
-        window.setTimeout(() => alert.remove(), 260);
-    }, 6500);
-});
+// Flash messages stay visible until dismissed so users have time to read them.
 
 // Convert wide data tables into labelled mobile rows instead of forcing horizontal scrolling.
 document.querySelectorAll('.table-responsive table').forEach(table => {
@@ -354,5 +347,13 @@ document.querySelectorAll('.table-responsive table').forEach(table => {
 
 // Mark displayed conversation as read via a CSRF-protected POST; GET remains read-only.
 document.querySelectorAll('form[data-read-receipt]').forEach(form => {
-    fetch(window.location.href, {method: 'POST', credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}, body: new FormData(form)}).catch(() => {});
+    const showFailure = () => {
+        const message = form.querySelector('[data-read-receipt-error]');
+        const retry = form.querySelector('[data-read-receipt-retry]');
+        if (message) message.hidden = false;
+        if (retry) retry.hidden = false;
+    };
+    fetch(window.location.href, {method: 'POST', credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}, body: new FormData(form)})
+        .then(response => { if (response.status !== 204) showFailure(); })
+        .catch(showFailure);
 });
