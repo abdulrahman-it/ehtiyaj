@@ -663,8 +663,8 @@ function header_ui(string $title = 'احتياج', bool $authLayout = false, ?ar
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
         <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-        <link href="<?= e(app_url('assets/style.css?v=20261003')) ?>" rel="stylesheet">
-        <?php if ($bodyClass === 'student-experience'): ?><link href="<?= e(app_url('assets/student.css')) ?>" rel="stylesheet"><?php elseif ($bodyClass === 'admin-experience'): ?><link href="<?= e(app_url('assets/admin.css')) ?>" rel="stylesheet"><?php endif; ?>
+        <link href="<?= e(app_url('assets/style.css?v=20261116-register-v2')) ?>" rel="stylesheet">
+        <?php if ($bodyClass === 'student-experience'): ?><link href="<?= e(app_url('assets/student.css')) ?>" rel="stylesheet"><?php elseif ($bodyClass === 'admin-experience'): ?><link href="<?= e(app_url('assets/admin.css?v=20261117-all-admin-headings-navy')) ?>" rel="stylesheet"><?php endif; ?>
     </head>
     <body<?= $bodyClass !== '' ? ' class="' . e($bodyClass) . '"' : '' ?>>
         <?php if ($authLayout): ?>

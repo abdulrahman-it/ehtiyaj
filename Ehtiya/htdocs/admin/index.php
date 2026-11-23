@@ -45,6 +45,15 @@ $metrics = [
     'العروض' => $counts['offers']['total'],
     'بلاغات تحتاج مراجعة' => $counts['reports']['open_count'],
 ];
+$metricDestinations = [
+    'الطلاب' => 'admin/users.php',
+    'طلبات قيد العمل' => 'admin/requests.php',
+    // Offers are reviewed through their associated requests in the current admin area.
+    'العروض' => 'admin/requests.php',
+    'بلاغات تحتاج مراجعة' => 'admin/reports.php',
+    // The existing admin conversation review flow is available from the reports queue.
+    'المحادثات' => 'admin/reports.php',
+];
 $secondaryMetrics = [
     'طلبات مكتملة' => $counts['requests']['completed'],
     'طلبات ملغاة' => $counts['requests']['cancelled'],
@@ -63,15 +72,15 @@ header_ui('لوحة الإدارة');
 <?php if ($metricsError): ?><div class="alert alert-warning" role="alert">تعذر تحميل بعض الإحصائيات. حاول مرة أخرى لاحقًا.</div><?php endif; ?>
 <section class="admin-metrics" aria-label="مؤشرات المنصة">
     <?php foreach ($metrics as $label => $value): ?>
-        <div class="admin-metric<?= $label === 'بلاغات تحتاج مراجعة' && $value !== null ? ($value > 0 ? ' is-critical' : ' is-clear') : '' ?>">
+        <a class="admin-metric<?= $label === 'بلاغات تحتاج مراجعة' && $value !== null ? ($value > 0 ? ' is-critical' : ' is-clear') : '' ?>" href="<?= e(app_url($metricDestinations[$label])) ?>">
             <span class="admin-metric-icon"><i class="bi <?= $label === 'الطلاب' ? 'bi-people' : ($label === 'طلبات قيد العمل' ? 'bi-journal-text' : ($label === 'العروض' ? 'bi-hand-thumbs-up' : 'bi-flag')) ?>" aria-hidden="true"></i></span>
             <span class="admin-metric-copy"><small><?= e($label) ?></small><strong><?= e($value === null ? 'غير متاح' : $value) ?></strong><span class="admin-metric-note"><?php if ($value === null): ?>تعذر تحميل المؤشر<?php elseif ($label === 'الطلاب'): ?>جميع حالات حسابات الطلاب<?php elseif ($label === 'طلبات قيد العمل'): ?>منشورة وتستقبل عروضًا أو قيد التنفيذ<?php elseif ($label === 'العروض'): ?>إجمالي العروض المسجلة<?php elseif ($value > 0): ?>تحتاج إلى مراجعة<?php else: ?>لا توجد بلاغات مفتوحة<?php endif; ?></span></span>
-        </div>
+        </a>
     <?php endforeach; ?>
-    <div class="admin-metric">
+    <a class="admin-metric" href="<?= e(app_url($metricDestinations['المحادثات'])) ?>">
         <span class="admin-metric-icon"><i class="bi bi-chat-dots" aria-hidden="true"></i></span>
             <span class="admin-metric-copy"><small>المحادثات</small><strong><?= e($secondaryMetrics['محادثات'] === null ? 'غير متاح' : $secondaryMetrics['محادثات']) ?></strong><span class="admin-metric-note">إجمالي المحادثات المسجلة</span></span>
-    </div>
+    </a>
 </section>
 
 <section class="admin-secondary-stats" aria-label="مؤشرات إضافية">

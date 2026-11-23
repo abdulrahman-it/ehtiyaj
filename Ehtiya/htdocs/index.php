@@ -53,16 +53,16 @@ header_ui('الرئيسية');
     </div>
 </section>
 
-<section class="how-section" aria-labelledby="examples-title">
+<section class="how-section landing-examples-section landing-reveal" aria-labelledby="examples-title">
     <div class="section-intro"><span class="section-kicker">ماذا يمكنك أن تطلب؟</span><h2 id="examples-title">احتياجات تبدأ بها الفكرة</h2><p>أمثلة توضيحية لما يمكن مشاركته، وليست طلبات منشورة.</p></div>
-    <ul class="row g-3 list-unstyled mb-0">
-        <?php foreach (['أحتاج مساعدة في مشروع تخرج.', 'أبحث عن شرح لمادة برمجة.', 'أحتاج مراجعة تصميم واجهة مستخدم.', 'أبحث عن شخص يساعدني في الرياضيات.', 'أحتاج مساعدة في إعداد بحث أكاديمي.'] as $example): ?>
-            <li class="col-12 col-md-6 col-lg-4"><div class="card h-100 p-3"><span class="d-flex align-items-start gap-2"><i class="bi bi-chat-square-text text-primary" aria-hidden="true"></i><span><?= e($example) ?></span></span></div></li>
+    <ul class="row g-3 list-unstyled mb-0 landing-example-list">
+        <?php $exampleIcons = ['bi-mortarboard', 'bi-code-slash', 'bi-window', 'bi-calculator', 'bi-journal-text']; foreach (['أحتاج مساعدة في مشروع تخرج.', 'أبحث عن شرح لمادة برمجة.', 'أحتاج مراجعة تصميم واجهة مستخدم.', 'أبحث عن شخص يساعدني في الرياضيات.', 'أحتاج مساعدة في إعداد بحث أكاديمي.'] as $index => $example): ?>
+            <li class="col-12 col-md-6 col-lg-4"><div class="card landing-example-card h-100 p-3"><span class="d-flex align-items-center gap-3"><i class="bi <?= e($exampleIcons[$index] ?? 'bi-chat-square-text') ?> landing-example-icon" aria-hidden="true"></i><span><?= e($example) ?></span></span></div></li>
         <?php endforeach; ?>
     </ul>
 </section>
 
-<section class="how-section" aria-labelledby="how-title">
+<section class="how-section landing-steps-section landing-reveal" aria-labelledby="how-title">
     <div class="section-intro"><span class="section-kicker">كيف تعمل المنصة؟</span><h2 id="how-title">ثلاث خطوات للتعاون</h2><p>من وصف احتياجك إلى التعاون مع زملائك.</p></div>
     <div class="how-steps">
         <article class="how-step"><span class="step-number">01</span><span class="step-icon"><i class="bi bi-pencil-square" aria-hidden="true"></i></span><h3>أنشئ احتياجك</h3><p>اكتب طلبًا يشرح ما تحتاج إليه في الدراسة أو المشاريع.</p></article>
@@ -71,7 +71,7 @@ header_ui('الرئيسية');
     </div>
 </section>
 
-<section class="how-section" aria-labelledby="latest-title">
+<section class="how-section landing-latest-section landing-reveal" aria-labelledby="latest-title">
     <div class="section-intro"><span class="section-kicker">مجتمع احتياج</span><h2 id="latest-title">أحدث الاحتياجات المتاحة</h2><p>طلبات منشورة تستقبل عروض المساعدة حاليًا.</p></div>
     <?php if (!$viewer): ?>
         <div class="card p-4"><p class="mb-3">سجّل الدخول أو أنشئ حساب طالب لتصفح الاحتياجات المنشورة وتقديم المساعدة.</p><div class="d-flex flex-wrap gap-2"><a class="btn btn-primary" href="<?= e(app_url('auth/register.php')) ?>">إنشاء حساب طالب</a><a class="btn btn-outline-primary" href="<?= e(app_url('auth/login.php')) ?>">تسجيل الدخول</a></div></div>
@@ -93,7 +93,7 @@ header_ui('الرئيسية');
     <?php endif; ?>
 </section>
 
-<section class="landing-cta">
+<section class="landing-cta landing-reveal">
     <div><span class="section-kicker">مجتمع يتشارك المعرفة</span><h2>خطوتك الأولى تبدأ من هنا.</h2><p><?= $viewer ? 'واصل رحلتك في احتياج من مساحتك.' : 'أنشئ حساب طالب لطلب المساعدة أو تقديمها.' ?></p></div>
     <?php if ($viewer): ?>
         <a class="btn btn-primary" href="<?= e(home_url($viewer)) ?>">افتح مساحتك <i class="bi bi-arrow-left" aria-hidden="true"></i></a>
@@ -101,4 +101,22 @@ header_ui('الرئيسية');
         <a class="btn btn-primary" href="<?= e(app_url('auth/register.php')) ?>">إنشاء حساب طالب <i class="bi bi-arrow-left" aria-hidden="true"></i></a>
     <?php endif; ?>
 </section>
+<script>
+(() => {
+    const sections = document.querySelectorAll('.landing-reveal');
+    if (!sections.length || window.matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) {
+        sections.forEach(section => section.classList.add('is-visible'));
+        return;
+    }
+    document.documentElement.classList.add('landing-reveal-enabled');
+    const observer = new IntersectionObserver((entries, currentObserver) => {
+        entries.forEach(entry => {
+            if (!entry.isIntersecting) return;
+            entry.target.classList.add('is-visible');
+            currentObserver.unobserve(entry.target);
+        });
+    }, { threshold: .12, rootMargin: '0px 0px -24px 0px' });
+    sections.forEach(section => observer.observe(section));
+})();
+</script>
 <?php footer_ui(); ?>
