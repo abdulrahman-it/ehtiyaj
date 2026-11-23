@@ -7,9 +7,7 @@ on:
       - main
 
 jobs:
-  web-deploy:
-    # Deployment is deliberately disabled until a separate approved change removes this guard.
-    if: ${{ false }}
+  web-deploy: 
     name: Deploying to Hosting
     runs-on: ubuntu-latest
     steps:
